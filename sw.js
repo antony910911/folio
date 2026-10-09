@@ -1,6 +1,6 @@
 // 離線快取：App 本身的檔案先從快取讀，背景再更新。
 // 新增或改名檔案時請更新 FILES 並把 VERSION 加一。
-const VERSION = 'v4';
+const VERSION = 'v5';
 const CACHE = `folio-${VERSION}`;
 const FILES = [
   './',
@@ -21,6 +21,8 @@ const FILES = [
   './js/importer.js',
   './js/mindmap.js',
   './js/mindmap-view.js',
+  './js/syncmodel.js',
+  './js/sync.js',
   './vendor/pptxgen-4.0.1.bundle.js',
   './vendor/docx-9.7.2.iife.js',
   './vendor/anthropic-sdk-0.128.0.mjs',
@@ -48,7 +50,7 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+  if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith('/api/')) return;
   e.respondWith(
     caches.open(CACHE).then(async (cache) => {
       const cached = await cache.match(e.request, { ignoreSearch: true });

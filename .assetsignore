@@ -1,0 +1,14 @@
+# Cloudflare 部署時「不要」上傳成網站內容的檔案（格式同 .gitignore）
+node_modules
+.git
+.gitignore
+.wrangler
+.dev.vars
+server
+tests
+tools
+dist
+package.json
+package-lock.json
+wrangler.jsonc
+README.md

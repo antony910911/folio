@@ -1,0 +1,16 @@
+// Cloudflare 部署設定。在 Cloudflare 後台把這個 repo 接上 Workers 後，每次推到 main 就會自動部署。
+// 同步密碼 SYNC_TOKEN 請在後台的 Settings › Variables and Secrets 設成 Secret，不要寫在這裡。
+{
+  "name": "folio",
+  "main": "server/worker.js",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": ".",
+    "binding": "ASSETS"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "LIBRARY", "class_name": "Library" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Library"] }],
+  "observability": { "enabled": true }
+}

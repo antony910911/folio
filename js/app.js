@@ -13,6 +13,7 @@ import { renderStrokes, canvasToBlob } from './inkrender.js';
 import { exportPptx, exportDocx, saveFile, safeFilename } from './exporter.js';
 import { recognize, backend, getApiKey, setApiKey } from './recognize.js';
 import { fileKind, openPdf, prepareImage } from './importer.js';
+import * as sync from './sync.js';
 
 const PEN_COLORS = ['#1f2a44', '#d9534f', '#2f6fd8', '#2f9e6e', '#8a5cd1'];
 const HL_COLORS = ['#f5d33b', '#86d46b', '#6cc4f0', '#f59bc4', '#f5a65b'];
@@ -69,7 +70,7 @@ app.innerHTML = `
         <button type="button" class="add-page" id="add-page">${icons.plus}<span>新增頁面</span></button>
       </nav>
     </div>
-    <div class="side-foot" id="side-foot"></div>
+    <button type="button" class="side-foot" id="side-foot"></button>
   </aside>
   <div class="scrim" id="scrim"></div>
   <main class="main">
@@ -114,7 +115,8 @@ function scheduleSave() {
 
 async function flush() {
   clearTimeout(saveTimers.get('all'));
-  const contents = [...pendingContent.values()].map((c) => JSON.parse(JSON.stringify(c)));
+  // 已經被刪掉的頁面（例如在另一台裝置上刪的）不要再存回去
+  const contents = [...pendingContent.values()].filter((c) => state.pages.some((p) => p.id === c.id)).map((c) => JSON.parse(JSON.stringify(c)));
   const pages = [...pendingPages].map((id) => state.pages.find((p) => p.id === id)).filter(Boolean);
   pendingContent.clear();
   pendingPages.clear();
@@ -131,7 +133,13 @@ async function flush() {
 const assetUrls = new Map();
 function assetUrl(id) {
   if (!assetUrls.has(id)) {
-    assetUrls.set(id, store.getAsset(id).then((a) => (a ? URL.createObjectURL(a.blob) : null)).catch(() => null));
+    const p = (async () => {
+      // 這台裝置還沒有的圖片（別台裝置匯入的）從同步伺服器下載
+      const a = (await store.getAsset(id).catch(() => null)) || (await sync.fetchAsset(id));
+      return a ? URL.createObjectURL(a.blob) : null;
+    })();
+    assetUrls.set(id, p);
+    p.then((url) => { if (!url) assetUrls.delete(id); }); // 拿不到的下次再試
   }
   return assetUrls.get(id);
 }
@@ -238,6 +246,8 @@ $('more').addEventListener('click', (e) => {
     { label: '整頁手寫轉文字', hint: '只轉這一頁的筆跡，螢光筆不算', action: () => inkToText(editor.penStrokes()), disabled: !page },
     { label: '手寫辨識設定…', action: openRecognizeSettings },
     { sep: true },
+    { label: '跨裝置同步…', hint: syncHint(), action: openSyncSettings },
+    { sep: true },
     { heading: '匯出' },
     { label: 'PowerPoint：這一頁', action: () => runExport('pptx', 'page'), disabled: !page },
     { label: 'PowerPoint：整個分區', action: () => runExport('pptx', 'section'), disabled: !state.sectionId },
@@ -274,10 +284,28 @@ function renderSidebar() {
   const pages = sc ? pagesOf(sc.id) : [];
   $('page-list').innerHTML = pages.map((p) => pageRowHtml(p)).join('') || '<li class="hint">沒有頁面</li>';
   $('add-page').disabled = !sc;
-  $('side-foot').innerHTML = store.persistent
-    ? '<span class="dot"></span>存在這台裝置'
-    : '<span class="dot warn"></span>這個瀏覽器不能存資料，關掉就會消失';
+  renderSyncStatus();
 }
+
+function renderSyncStatus(st = sync.getStatus()) {
+  const foot = $('side-foot');
+  if (!store.persistent) {
+    foot.innerHTML = '<span class="dot warn"></span>這個瀏覽器不能存資料，關掉就會消失';
+    return;
+  }
+  const time = st.at ? new Date(st.at).toTimeString().slice(0, 5) : '';
+  const text = {
+    off: ['', '存在這台裝置 · 開啟跨裝置同步'],
+    idle: ['ok', time ? `已同步 · ${time}` : '已同步'],
+    syncing: ['busy', '同步中…'],
+    offline: ['warn-soft', '離線中，連上網後會自動同步'],
+    unauthorized: ['warn', '同步密碼不對，點這裡重新設定'],
+    error: ['warn', st.message || '同步失敗，稍後會再試'],
+  }[st.state] || ['', ''];
+  foot.innerHTML = `<span class="dot ${text[0]}"></span><span>${esc(text[1])}</span>`;
+}
+
+$('side-foot').addEventListener('click', () => openSyncSettings());
 
 function pageRowHtml(p) {
   return `<li class="row page-row${p.id === state.pageId ? ' on' : ''}" data-id="${p.id}">
@@ -666,6 +694,143 @@ $('import-file').addEventListener('change', async (e) => {
   toast('匯入完成。');
 });
 
+// ---------- 跨裝置同步 ----------
+function syncHint() {
+  const st = sync.getStatus().state;
+  return { off: '未開啟', idle: '已開啟', syncing: '同步中', offline: '離線中', unauthorized: '密碼不對', error: '有問題' }[st] || '';
+}
+
+// claude.ai 的預覽連不到外部伺服器
+const inPreview = !!(globalThis.claude && typeof globalThis.claude.use === 'function');
+
+async function openSyncSettings() {
+  if (inPreview) {
+    await askConfirm({ title: '預覽版不能同步', message: '請在你部署到 Cloudflare 的網址開啟 Folio，再到這裡設定跨裝置同步。', ok: '知道了' });
+    return;
+  }
+  const cfg = sync.getConfig();
+  const st = sync.getStatus();
+  const pending = await sync.pendingCount();
+  const statusText = cfg.enabled
+    ? ({ idle: '已開啟，資料是最新的。', syncing: '正在同步…', offline: '目前離線，連上網後會自動同步。', unauthorized: '同步密碼不對，請重新輸入。', error: st.message || '同步時發生問題，稍後會再試。' }[st.state] || '已開啟。') + (pending ? `（還有 ${pending} 筆變更等著送出）` : '')
+    : '開啟後，這台裝置的筆記會和其他裝置自動同步。每台裝置都要輸入同一組同步密碼。';
+  dlgForm.innerHTML = `
+    <h2 class="dlg-title">跨裝置同步</h2>
+    <p class="dlg-msg">${esc(statusText)}</p>
+    <label class="dlg-label" for="sync-token">同步密碼</label>
+    <input class="dlg-input" id="sync-token" type="password" autocomplete="off" spellcheck="false" placeholder="和 Cloudflare 上設定的 SYNC_TOKEN 一樣">
+    <details class="dlg-more"><summary>進階：同步伺服器網址</summary>
+      <input class="dlg-input" id="sync-url" autocomplete="off" spellcheck="false" placeholder="留空＝目前這個網址">
+    </details>
+    <div class="dlg-actions">
+      ${cfg.enabled ? '<button type="button" class="ghost danger-text" data-close="disable">停用同步</button><span class="spacer"></span><button type="button" class="ghost" data-close="now">立即同步</button><button type="submit" class="primary" value="save">儲存</button>' : '<button type="button" class="ghost" id="dlg-cancel">取消</button><button type="submit" class="primary" value="enable">開啟同步</button>'}
+    </div>`;
+  if (cfg.enabled) dlgForm.insertAdjacentHTML('beforeend', '<button type="button" id="dlg-cancel" hidden></button>');
+  // 這兩個不是送出按鈕：在密碼欄按 Enter 只會儲存，不會誤按到停用
+  for (const b of dlgForm.querySelectorAll('[data-close]')) b.addEventListener('click', () => dlg.close(b.dataset.close));
+  $('sync-token').value = cfg.token;
+  $('sync-url').value = cfg.url;
+  const choice = await showDialogChoice(() => ({ token: $('sync-token').value.trim(), url: $('sync-url').value.trim() }));
+  if (!choice) return;
+  const { action, value } = choice;
+  if (action === 'disable') {
+    const ok = await askConfirm({ title: '停用同步？', message: '這台裝置的筆記會保留，但之後的修改不會再同步。雲端上的資料不會被刪除。', ok: '停用' });
+    if (ok) { await sync.disable(); toast('已停用同步。'); }
+    return;
+  }
+  if (action === 'now') { sync.syncNow(); return; }
+  if (!/^[A-Za-z0-9._~-]{12,200}$/.test(value.token)) {
+    toast('同步密碼至少 12 個字元，只能用英文字母、數字和 . _ ~ -');
+    return;
+  }
+  if (action === 'save' && value.token === cfg.token && value.url === cfg.url) return;
+  toast('正在連線…', { sticky: true });
+  const res = await sync.probe(value.url, value.token);
+  if (!res.ok) {
+    toast({ unauthorized: '同步密碼不對。', offline: '連不上同步伺服器，請確認網址和網路。', not_configured: '伺服器還沒有設定 SYNC_TOKEN。' }[res.code] || '連線失敗，請稍後再試。');
+    return;
+  }
+  let mode = 'upload';
+  if (res.records > 0 && action === 'enable') {
+    mode = await askSyncMode();
+    if (!mode) { hideToast(); return; }
+  } else if (action === 'save') {
+    mode = 'merge';
+  }
+  toast('正在同步…', { sticky: true });
+  await flush();
+  await sync.enable(value.url, value.token, mode);
+  await reloadFromStore();
+  toast(mode === 'replace' ? '已換成雲端的筆記。' : '已開啟同步。');
+}
+
+function askSyncMode() {
+  dlgForm.innerHTML = `
+    <h2 class="dlg-title">雲端已經有筆記了</h2>
+    <p class="dlg-msg">這台裝置要怎麼處理？</p>
+    <div class="import-opts" role="radiogroup">
+      <label class="import-opt"><input type="radio" name="sync-mode" value="replace" checked><span>使用雲端的筆記<small>這台裝置目前的內容會被雲端的取代。新裝置選這個。</small></span></label>
+      <label class="import-opt"><input type="radio" name="sync-mode" value="merge"><span>合併兩邊<small>兩邊的筆記都保留。同名的筆記本會出現兩本。</small></span></label>
+    </div>
+    <div class="dlg-actions"><button type="button" class="ghost" id="dlg-cancel">取消</button><button class="primary" value="ok">繼續</button></div>`;
+  return showDialog(() => dlgForm.querySelector('[name=sync-mode]:checked').value, () => dlgForm.querySelector('[value=ok]').focus());
+}
+
+// 對話框有好幾個按鈕時：回傳 { action, value }，取消回傳 null
+function showDialogChoice(read) {
+  return new Promise((resolve) => {
+    const onClose = () => {
+      dlg.removeEventListener('close', onClose);
+      const v = dlg.returnValue;
+      resolve(v && v !== 'cancel' ? { action: v, value: read() } : null);
+    };
+    dlg.addEventListener('close', onClose);
+    $('dlg-cancel').addEventListener('click', () => dlg.close('cancel'));
+    dlg.returnValue = '';
+    dlg.showModal();
+    $('sync-token').focus();
+  });
+}
+
+// 別台裝置的變更寫進本機之後：更新側邊欄，打開的那頁換成新內容
+async function onRemoteApplied({ structure, pages }) {
+  if (structure) await reloadIndex();
+  if (state.pageId && pages.has(state.pageId)) {
+    const page = state.pages.find((p) => p.id === state.pageId);
+    const content = await store.getContent(state.pageId);
+    if (page && content) editor.replaceItems(page, content.items);
+  }
+  renderSidebar();
+}
+
+// 重新讀清單，但保留原本的物件（編輯器手上拿的頁面物件不能換掉）
+async function reloadIndex() {
+  const fresh = await store.loadIndex();
+  for (const kind of ['notebooks', 'sections', 'pages']) {
+    const old = new Map(state[kind].map((x) => [x.id, x]));
+    state[kind] = fresh[kind].map((x) => (old.has(x.id) ? Object.assign(old.get(x.id), x) : x));
+  }
+  if (state.pageId && !state.pages.some((p) => p.id === state.pageId)) {
+    toast('這一頁在另一台裝置上被刪除了。');
+    state.pageId = null;
+    const sc = state.sections.find((x) => x.id === state.sectionId);
+    if (sc) openSection(sc.id); else if (state.notebooks.length) openNotebook(sortByOrder(state.notebooks)[0].id); else showPage(null);
+  } else if (state.notebookId && !state.notebooks.some((n) => n.id === state.notebookId) && state.notebooks.length) {
+    openNotebook(sortByOrder(state.notebooks)[0].id);
+  }
+}
+
+async function reloadFromStore() {
+  const fresh = await store.loadIndex();
+  Object.assign(state, fresh);
+  if (!state.notebooks.length) {
+    // 雲端是空的又選了取代：放一份示範內容，不要留下空白畫面
+    Object.assign(state, await store.init());
+  }
+  const last = state.pages.find((p) => p.id === prefs.lastPage);
+  if (last) openPage(last.id); else openNotebook(sortByOrder(state.notebooks)[0].id);
+}
+
 // ---------- 插入 PDF、圖片 ----------
 let importing = false;
 
@@ -741,13 +906,15 @@ async function handleFiles(files, at) {
 }
 
 async function saveAsset(prepared) {
-  const asset = { id: newAssetId(), blob: prepared.blob, w: prepared.w, h: prepared.h };
+  const asset = { id: await newAssetId(prepared.blob), blob: prepared.blob, w: prepared.w, h: prepared.h };
   await store.putAsset(asset);
   return asset.id;
 }
 
-function newAssetId() {
-  return 'as_' + (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '').slice(0, 16) : Math.random().toString(36).slice(2) + Date.now().toString(36));
+// 圖片 id 用內容的雜湊：同一張圖不管匯入幾次、在哪台裝置，都只存一份、只上傳一次
+async function newAssetId(blob) {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()));
+  return 'as_' + [...digest.slice(0, 16)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 async function importImages(files, at) {
@@ -986,6 +1153,13 @@ function shortDate(ts) {
 async function boot() {
   Object.assign(state, await store.init());
   store.gcAssets().catch(() => { /* 清不掉下次再清 */ });
+  sync.init({
+    canApply: (pages) => !(state.pageId && pages.has(state.pageId) && editor.isBusy()),
+    beforeApply: flush,
+    afterApply: onRemoteApplied,
+    status: renderSyncStatus,
+    assetArrived: (id) => { assetUrls.delete(id); editor.refreshAsset(id); },
+  });
   store.requestPersist();
   if (narrow.matches) prefs.sidebar = false; // 手機上側邊欄預設收起來
   applySidebar();

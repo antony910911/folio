@@ -829,3 +829,25 @@ button.ghost { background: color-mix(in srgb, var(--fg) 7%, transparent); }
 .mmbar .danger { color: var(--danger); }
 .mmbar .sep { width: 1px; margin: 6px 2px; background: var(--line); }
 body:has(.mmbar:not([hidden])) .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
+
+/* ---------- 同步 ---------- */
+button.side-foot {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+button.side-foot:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 4%, transparent); }
+.dot { flex: none; background: var(--muted); }
+.dot.ok { background: #2f9e6e; }
+.dot.busy { background: var(--accent); animation: pulse 1s ease-in-out infinite alternate; }
+.dot.warn-soft { background: #d98b2b; }
+@keyframes pulse { from { opacity: .35; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .dot.busy { animation: none; } }
+.dlg-more { margin: -6px 0 14px; font-size: 13px; color: var(--muted); }
+.dlg-more summary { cursor: pointer; margin-bottom: 8px; }
+.dlg-more .dlg-input { margin-bottom: 0; }
+.dlg-actions .spacer { flex: 1; }
+button.danger-text { color: var(--danger); }

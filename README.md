@@ -2,7 +2,7 @@
 
 自己的筆記本。結構跟 OneNote 一樣是「筆記本 › 分區 › 頁面」，每一頁都是一張可以自由寫字、打字的紙，iPad 上可以用 Apple Pencil 手寫。
 
-目前有：本機儲存、手寫、文字框、心智圖、匯入 PDF／簡報／圖片、手寫轉文字、匯出 PowerPoint／Word。跨裝置同步會在後面加上。
+目前有：手寫、文字框、心智圖、匯入 PDF／簡報／圖片、手寫轉文字、匯出 PowerPoint／Word、跨裝置同步（Cloudflare）。
 
 ## 現在能做什麼
 
@@ -30,13 +30,45 @@
 
 心智圖選取節點時：`Tab` 加子主題、`Enter` 加同層主題、`空白鍵`／`F2` 編輯、`Delete` 刪除、方向鍵移動選取、`Alt+↑↓` 調整順序、`Esc` 取消選取。編輯文字時 `Enter` 完成（中文輸入法選字時按的 Enter 不算）、`Tab` 完成並加子主題、`Shift+Enter` 換行。
 
-## 在 iPad 上使用
+## 部署到 Cloudflare（含跨裝置同步）
 
-1. 把這個資料夾放到任何 HTTPS 靜態主機（GitHub Pages、Cloudflare Pages、Netlify 都可以）。
-2. 用 iPad 的 Safari 打開網址，按分享 › **加入主畫面**。
-3. 之後從主畫面打開。加入主畫面很重要：沒加的話，Safari 可能會在一段時間沒用後清掉本機資料。
+App 和同步伺服器放在同一個 Cloudflare Worker。免費方案就夠個人使用。
 
-資料只存在那台裝置的瀏覽器裡（IndexedDB）。同步做好之前，換裝置請用匯出／匯入備份。
+1. Cloudflare 後台 › **Workers & Pages** › **Create** › **Import a repository**，選 `folio` 這個 repo。設定都用預設值（部署指令是 `npx wrangler deploy`，會讀 `wrangler.jsonc`）。之後每次推到 `main` 都會自動部署。
+2. 第一次部署完成後，到這個 Worker 的 **Settings › Variables and Secrets** › **Add**：類型選 **Secret**，名稱 `SYNC_TOKEN`，值是你自己的同步密碼（至少 12 個字，只能用英文字母、數字和 `. _ ~ -`；可以用密碼管理工具產生的強密碼）。
+3. 在 iPad 的 Safari 打開 `https://folio.<你的子網域>.workers.dev`，按分享 › **加入主畫面**。
+4. 點側邊欄最下面的「開啟跨裝置同步」，輸入同一組同步密碼。
+5. 其他裝置也打開同一個網址、輸入同一組密碼。第一次會問要「使用雲端的筆記」（新裝置選這個）還是「合併兩邊」。
+
+加入主畫面很重要：沒加的話，Safari 可能會在一段時間沒用後清掉本機資料。開了同步之後，就算本機資料被清掉也能從雲端拿回來。
+
+在 claude.ai 預覽裡寫的筆記不會自動出現在新網址：先在預覽裡「⋯ › 備份檔」，再到新網址「⋯ › 匯入備份…」，開了同步的話會一起傳上雲端。
+
+## 跨裝置同步怎麼運作
+
+- 每台裝置都先存在本機，沒網路時照常可以用；連上網後自動把變更送出、把別台的變更拿回來。
+- 裝置之間用 WebSocket 即時通知，另一台的修改通常 1～2 秒內就會出現。
+- 同步的單位很細：每一筆筆跡、每個文字框、每張心智圖、每張圖片各自一筆。所以兩台裝置同時在同一頁寫字，兩邊的字都會保留。
+- 同一個項目兩邊都改了（例如同一個文字框），以**比較晚的修改**為準。
+- 正在寫字或打字的那一頁，會等你停下來才套用別台的修改，不會打斷你。
+- 圖片用內容的雜湊當 id：同一張圖只上傳一次；別台裝置需要時才下載，下載後離線也看得到。
+- 側邊欄最下面會顯示同步狀態（已同步、同步中、離線中、密碼不對）。
+
+### 免費方案的額度
+
+| 項目 | 免費上限 | 換算 |
+|---|---|---|
+| Worker 請求 | 每天 10 萬次 | 網頁本身的檔案不算 |
+| Durable Objects 儲存 | 總共 5 GB | 筆記和圖片都放這裡；投影片一頁大約 100～300 KB |
+| Durable Objects 寫入 | 每天 10 萬列 | 一筆筆跡大約 2～3 列 |
+
+超過時當天的同步會失敗，隔天（UTC 00:00）恢復，本機資料不受影響。
+
+### 安全
+
+- 同步密碼存在每台裝置的瀏覽器裡。知道密碼的人就能讀寫你的筆記，請不要在別人的裝置上輸入。
+- 換密碼：在 Cloudflare 改 `SYNC_TOKEN`，再到每台裝置的「跨裝置同步…」輸入新密碼。
+- App 的網頁檔案是公開的（裡面沒有個人資料）；筆記只能透過 `/api/` 存取，一定要帶密碼。
 
 iPad 上匯出檔案時會打開分享選單，選「儲存到檔案」或直接傳到 PowerPoint、Word、AirDrop。
 
@@ -53,7 +85,10 @@ iPad 上匯出檔案時會打開分享選單，選「儲存到檔案」或直接
 不需要安裝任何套件，也沒有建置步驟。
 
 ```sh
-npm start      # 在 http://localhost:8080 開啟
+npm install    # 只有本機跑同步伺服器（wrangler）時需要
+npm run dev    # App 加同步伺服器，在 http://127.0.0.1:8787 開啟；同步密碼寫在 .dev.vars（SYNC_TOKEN=...）
+               # 本機的同步資料放在上一層的 .folio-dev-state（放在專案裡會讓 wrangler 一直重新載入）
+npm start      # 只開 App（不含同步），在 http://localhost:8080
 npm test       # 跑單元測試（Node 20 以上）
 ```
 
@@ -74,6 +109,11 @@ js/recognize.js       手寫辨識（Claude）
 js/importer.js        匯入 PDF（PDF.js）和圖片
 js/mindmap.js         心智圖的資料和自動排版（純函式）
 js/mindmap-view.js    把心智圖畫到頁面上
+js/syncmodel.js       同步規則（純函式）：版本號、時鐘、比對、合併
+js/sync.js            同步：outbox、送出、拿回來、即時通知、下載圖片
+server/worker.js      Cloudflare Worker 和 Durable Object（同步伺服器）
+wrangler.jsonc        Cloudflare 部署設定
+.assetsignore         部署時不要公開的檔案
 js/vendor.js          用到時才載入第三方函式庫
 vendor/               PptxGenJS 4.0.1、docx 9.7.2、Anthropic SDK 0.128.0（打包成單一檔案）、
                       PDF.js 6.3.289（legacy 版，含中文字型對照表），授權檔在同一個資料夾
@@ -100,5 +140,5 @@ tools/build-preview.mjs  把整個 App 打包成單一 HTML，用來做線上預
 2. ~~匯出 PowerPoint／Word、手寫轉文字~~
 3. ~~匯入 PDF／簡報、插入圖片~~
 4. ~~心智圖~~
-5. 跨裝置同步（Yjs 加同步伺服器）
+5. ~~跨裝置同步（Cloudflare Worker + Durable Object）~~
 6. 自訂主題和介面

@@ -201,6 +201,7 @@ export function createEditor(viewport, hooks = {}) {
     const img = document.createElement('img');
     img.className = 'pimg';
     img.dataset.id = it.id;
+    img.dataset.asset = it.asset;
     img.alt = '';
     img.draggable = false;
     Object.assign(img.style, { left: it.x + 'px', top: it.y + 'px', width: it.w + 'px', height: it.h + 'px' });
@@ -1325,6 +1326,27 @@ export function createEditor(viewport, hooks = {}) {
     insertImages,
     insertMindmap,
     handleKey,
+    // 同步用：正在寫字、拖曳或打字時不要套用遠端變更
+    isBusy: () => !!gesture || !!pinch || !!(mm && mm.editing) || !!(document.activeElement && document.activeElement.closest && document.activeElement.closest('.tb-body')),
+    // 別台裝置改了這一頁：換成新的內容，保留目前看的位置；復原紀錄清掉，免得復原時蓋掉別人的修改
+    replaceItems(p, newItems) {
+      if (!page || page.id !== p.id) return;
+      clearNode();
+      items = newItems.map((x) => ({ ...x }));
+      undoStack = [];
+      redoStack = [];
+      selection.clear();
+      if (document.activeElement !== titleInput) titleInput.value = p.title || '';
+      surface.dataset.bg = p.background || 'ruled';
+      renderAll();
+      emitHistory();
+    },
+    refreshAsset(assetId) {
+      for (const img of imgLayer.querySelectorAll(`img[data-asset="${assetId}"]`)) {
+        img.classList.remove('missing');
+        hooks.assetUrl(assetId).then((url) => { if (url) img.src = url; });
+      }
+    },
     hasNodeSelection: () => !!mm,
     penStrokes: () => JSON.parse(JSON.stringify(items.filter((it) => it.type === 'stroke' && it.tool !== 'highlighter'))),
     setBusy(busy) { selbar.classList.toggle('busy', busy); selbar.querySelector('[data-act="ink2text"]').disabled = busy; },

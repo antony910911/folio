@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const ORDER = ['icons', 'ink', 'model', 'layout', 'mindmap', 'store', 'mindmap-view', 'editor', 'inkrender', 'vendor', 'recognize', 'exporter', 'importer', 'app']; // 被依賴的在前面
+const ORDER = ['icons', 'ink', 'model', 'layout', 'mindmap', 'store', 'syncmodel', 'sync', 'mindmap-view', 'editor', 'inkrender', 'vendor', 'recognize', 'exporter', 'importer', 'app']; // 被依賴的在前面
 
 const ident = (name) => '__' + name.replace(/[^\w]/g, '_');
 
