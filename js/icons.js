@@ -16,4 +16,5 @@ export const icons = {
   chevron: wrap('<path d="M8 10l4 4 4-4"/>'),
   book: wrap('<path d="M5 4.5h11a2 2 0 012 2v13H7a2 2 0 01-2-2z"/><path d="M5 17.5a2 2 0 012-2h11"/>'),
   check: wrap('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
+  insert: wrap('<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M20.5 16l-5-5L7 19"/>'),
 };

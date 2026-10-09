@@ -142,6 +142,11 @@ export function pointInRect(x, y, r) {
   return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 }
 
+// outer 完全包住 inner
+export function rectContains(outer, inner) {
+  return inner.x >= outer.x && inner.y >= outer.y && inner.x + inner.w <= outer.x + outer.w && inner.y + inner.h <= outer.y + outer.h;
+}
+
 // 框選：一半以上的取樣點在框內就算選到，斜斜框到一角不會誤選。
 export function strokeInRect(stroke, rect) {
   if (!rectsIntersect(strokeBounds(stroke), rect)) return false;

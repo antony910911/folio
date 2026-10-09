@@ -19,8 +19,9 @@ const MIME = {
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 };
 
-// 一頁拆成可以排版的區塊：標題、日期、文字框、一群一群的手寫
-function buildBlocks(page, items, { highlighter }) {
+// 一頁拆成可以排版的區塊：標題、日期、圖片、文字框、一群一群的手寫
+// getAsset(id) → { blob, w, h } | null
+async function buildBlocks(page, items, { highlighter, getAsset }) {
   const blocks = [
     { kind: 'title', x: 64, y: 40, w: 640, h: 44, text: pageDisplayTitle(page) },
     { kind: 'date', x: 64, y: 96, w: 640, h: 20, text: formatDate(page.createdAt).replace(/\s+/g, ' ') },
@@ -31,6 +32,11 @@ function buildBlocks(page, items, { highlighter }) {
     const paragraphs = htmlToParagraphs(html);
     if (!paragraphs.some((p) => p.runs.some((r) => r.text.trim()))) continue;
     blocks.push({ kind: 'text', x: it.x, y: it.y, w: it.w, h: measureTextHeight(html, it.w), paragraphs });
+  }
+  for (const it of items) {
+    if (it.type !== 'image') continue;
+    const asset = await getAsset(it.asset);
+    if (asset) blocks.push({ kind: 'image', x: it.x, y: it.y, w: it.w, h: it.h, blob: asset.blob });
   }
   const strokes = items.filter((it) => it.type === 'stroke' && (highlighter || it.tool !== 'highlighter'));
   const clusters = clusterBoxes(strokes.map((s) => ({ id: s.id, ...strokeBounds(s) })), 40);
@@ -61,20 +67,23 @@ function pptxRuns(paragraphs) {
 }
 
 // entries: [{ page, items }]
-export async function exportPptx(entries, title) {
+export async function exportPptx(entries, title, getAsset) {
   const PptxGenJS = await loadPptx();
   const pptx = new PptxGenJS();
   pptx.layout = 'LAYOUT_WIDE';
   pptx.title = title;
   pptx.author = 'Folio';
   for (const { page, items } of entries) {
-    const blocks = buildBlocks(page, items, { highlighter: true });
+    const blocks = await buildBlocks(page, items, { highlighter: true, getAsset });
     const { scale, slides } = planSlides(blocks, SLIDE);
     const pt = (px) => Math.max(6, Math.round(px * scale * 72 * 10) / 10);
-    slides.forEach((s, si) => {
+    for (const [si, s] of slides.entries()) {
       const slide = pptx.addSlide();
       slide.background = { color: 'FFFFFF' };
-      // 手寫圖片放最下層，文字疊在上面，跟畫面上一樣
+      // 疊放順序跟畫面上一樣：匯入的圖片 → 手寫 → 文字
+      for (const b of s.blocks.filter((x) => x.kind === 'image')) {
+        slide.addImage({ data: await blobToDataUrl(b.blob), x: b.sx, y: b.sy, w: b.sw, h: b.sh });
+      }
       for (const b of s.blocks.filter((x) => x.kind === 'ink')) {
         slide.addImage({ data: b.canvas.toDataURL('image/png'), x: b.sx, y: b.sy, w: b.sw, h: b.sh });
       }
@@ -94,18 +103,18 @@ export async function exportPptx(entries, title) {
           });
         }
       }
-    });
+    }
   }
   const blob = await pptx.write({ outputType: 'blob' });
   return new Blob([blob], { type: MIME.pptx });
 }
 
 // ---------- Word ----------
-export async function exportDocx(entries, title) {
+export async function exportDocx(entries, title, getAsset) {
   const d = await loadDocx();
   const sections = [];
   for (const { page, items } of entries) {
-    const blocks = buildBlocks(page, items, { highlighter: false });
+    const blocks = await buildBlocks(page, items, { highlighter: false, getAsset });
     const head = blocks.filter((b) => b.kind === 'title' || b.kind === 'date');
     const body = readingOrder(blocks.filter((b) => b.kind !== 'title' && b.kind !== 'date'));
     const children = [
@@ -122,11 +131,12 @@ export async function exportDocx(entries, title) {
           children.push(new d.Paragraph({ children: runs, bullet: p.list === 'ul' ? { level: 0 } : undefined }));
         }
         children.push(new d.Paragraph({ children: [] }));
-      } else if (b.kind === 'ink') {
-        const blob = await canvasToBlob(b.canvas);
+      } else if (b.kind === 'ink' || b.kind === 'image') {
+        const blob = b.kind === 'ink' ? await canvasToBlob(b.canvas) : b.blob;
         const size = fitWidth(b.w, b.h, WORD_MAX_IMAGE_W);
+        const type = blob.type === 'image/jpeg' ? 'jpg' : blob.type === 'image/gif' ? 'gif' : 'png';
         children.push(new d.Paragraph({
-          children: [new d.ImageRun({ type: 'png', data: new Uint8Array(await blob.arrayBuffer()), transformation: { width: size.w, height: size.h } })],
+          children: [new d.ImageRun({ type, data: new Uint8Array(await blob.arrayBuffer()), transformation: { width: size.w, height: size.h } })],
         }));
       }
     }
@@ -145,6 +155,15 @@ export async function exportDocx(entries, title) {
   });
   const blob = await d.Packer.toBlob(doc);
   return new Blob([blob], { type: MIME.docx });
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
 }
 
 // ---------- 存檔 ----------

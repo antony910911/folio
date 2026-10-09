@@ -1,9 +1,10 @@
 // 頁面編輯器：一張可以平移縮放的紙，上面有筆跡（SVG）和文字框（HTML）。
 // 工具：select 選取、hand 平移、pen 筆、highlighter 螢光筆、eraser 橡皮擦、text 文字。
+// 由下到上的圖層：圖片（匯入的 PDF、截圖）→ 筆跡 → 文字框，所以可以直接在投影片上寫字。
 
 import {
   strokeOutline, simulatedPressure, strokeHit, strokeBounds, strokeInRect, unionBounds,
-  rectFromPoints, rectsIntersect, pointInRect, compactPoints, translateStroke,
+  rectFromPoints, rectsIntersect, pointInRect, rectContains, compactPoints, translateStroke,
 } from './ink.js';
 import { newId } from './model.js';
 import { textToHtml } from './layout.js';
@@ -52,9 +53,10 @@ export function createEditor(viewport, hooks = {}) {
         <input class="page-title" id="page-title" placeholder="頁面標題" autocomplete="off" aria-label="頁面標題">
         <div class="page-date"></div>
       </div>
+      <div class="images"></div>
       <svg class="ink" xmlns="${SVG_NS}"></svg>
       <div class="texts"></div>
-      <div class="sel-box" hidden></div>
+      <div class="sel-box" hidden><div class="sel-resize" hidden title="拖曳調整大小"></div></div>
       <div class="marquee" hidden></div>
     </div>
     <div class="selbar" hidden>
@@ -67,6 +69,8 @@ export function createEditor(viewport, hooks = {}) {
   const surface = viewport.querySelector('.surface');
   const svg = viewport.querySelector('.ink');
   const textLayer = viewport.querySelector('.texts');
+  const imgLayer = viewport.querySelector('.images');
+  const selResize = viewport.querySelector('.sel-resize');
   const titleInput = viewport.querySelector('.page-title');
   const dateEl = viewport.querySelector('.page-date');
   const selBox = viewport.querySelector('.sel-box');
@@ -141,9 +145,8 @@ export function createEditor(viewport, hooks = {}) {
         maxX = Math.max(maxX, b.x + b.w);
         maxY = Math.max(maxY, b.y + b.h);
       } else {
-        const el = els.get(it.id);
         maxX = Math.max(maxX, it.x + it.w);
-        maxY = Math.max(maxY, it.y + (el ? el.offsetHeight : 100));
+        maxY = Math.max(maxY, it.y + itemBounds(it).h);
       }
     }
     surfaceSize = {
@@ -178,10 +181,31 @@ export function createEditor(viewport, hooks = {}) {
     return box;
   }
 
+  function imageEl(it) {
+    const img = document.createElement('img');
+    img.className = 'pimg';
+    img.dataset.id = it.id;
+    img.alt = '';
+    img.draggable = false;
+    Object.assign(img.style, { left: it.x + 'px', top: it.y + 'px', width: it.w + 'px', height: it.h + 'px' });
+    if (hooks.assetUrl) {
+      hooks.assetUrl(it.asset).then((url) => { if (url) img.src = url; else img.classList.add('missing'); });
+    }
+    return img;
+  }
+
+  function makeEl(it) {
+    if (it.type === 'stroke') return strokeEl(it);
+    if (it.type === 'image') return imageEl(it);
+    return textEl(it);
+  }
+
   function renderItem(it) {
-    const el = it.type === 'stroke' ? strokeEl(it) : textEl(it);
+    const el = makeEl(it);
     els.set(it.id, el);
-    if (it.type === 'stroke') {
+    if (it.type === 'image') {
+      imgLayer.appendChild(el);
+    } else if (it.type === 'stroke') {
       // 螢光筆放在筆跡下面，寫在上面的字才不會被蓋住
       if (it.tool === 'highlighter') svg.insertBefore(el, svg.querySelector('path:not(.hl)'));
       else svg.appendChild(el);
@@ -194,6 +218,7 @@ export function createEditor(viewport, hooks = {}) {
   function renderAll() {
     svg.replaceChildren();
     textLayer.replaceChildren();
+    imgLayer.replaceChildren();
     els.clear();
     for (const it of items) renderItem(it);
     updateSurfaceSize();
@@ -258,6 +283,7 @@ export function createEditor(viewport, hooks = {}) {
   // ---------- 選取 ----------
   function itemBounds(it) {
     if (it.type === 'stroke') return strokeBounds(it);
+    if (it.type === 'image') return { x: it.x, y: it.y, w: it.w, h: it.h };
     const el = els.get(it.id);
     return { x: it.x, y: it.y, w: it.w, h: el ? el.offsetHeight : 40 };
   }
@@ -277,6 +303,8 @@ export function createEditor(viewport, hooks = {}) {
       return;
     }
     const pad = 6;
+    const only = selection.size === 1 ? items.find((it) => selection.has(it.id)) : null;
+    selResize.hidden = !(only && only.type === 'image');
     selBox.hidden = false;
     Object.assign(selBox.style, { left: b.x - pad + 'px', top: b.y - pad + 'px', width: b.w + pad * 2 + 'px', height: b.h + pad * 2 + 'px', transform: '' });
     selbar.hidden = false;
@@ -343,7 +371,7 @@ export function createEditor(viewport, hooks = {}) {
     for (const it of items.filter((x) => selection.has(x.id))) {
       const copy = it.type === 'stroke'
         ? { ...translateStroke(it, 24, 24), id: newId('s_') }
-        : { ...it, id: newId('t_'), x: it.x + 24, y: it.y + 24 };
+        : { ...it, id: newId(it.type === 'image' ? 'i_' : 't_'), x: it.x + 24, y: it.y + 24 };
       copies.push(copy);
     }
     for (const c of copies) { items.push(c); renderItem(c); }
@@ -372,7 +400,7 @@ export function createEditor(viewport, hooks = {}) {
     for (const id of selection) {
       const old = els.get(id);
       const it = items.find((x) => x.id === id);
-      const el = it.type === 'stroke' ? strokeEl(it) : textEl(it);
+      const el = makeEl(it);
       old.replaceWith(el);
       els.set(id, el);
     }
@@ -572,11 +600,16 @@ export function createEditor(viewport, hooks = {}) {
     Object.assign(eraserCursor.style, { width: d + 'px', height: d + 'px', left: cx - r.left - d / 2 + 'px', top: cy - r.top - d / 2 + 'px' });
   }
 
-  function hitStrokeAt(p) {
+  // 點一下選取：筆跡優先（寫在投影片上的字），再來才是底下的圖片
+  function hitItemAt(p) {
     const radius = 8 / view.z;
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i];
       if (it.type === 'stroke' && strokeHit(it, p.x, p.y, radius)) return it;
+    }
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i];
+      if (it.type === 'image' && pointInRect(p.x, p.y, it)) return it;
     }
     return null;
   }
@@ -652,6 +685,9 @@ export function createEditor(viewport, hooks = {}) {
       gesture = { kind: 'erase', id: e.pointerId, before: snapshot(), changed: false };
       eraseAt(gesture, e.clientX, e.clientY);
       showEraser(e.clientX, e.clientY);
+    } else if (tool === 'select' && e.target.closest('.sel-resize')) {
+      const it = items.find((x) => selection.has(x.id));
+      gesture = { kind: 'resize', id: e.pointerId, from: toPage(e.clientX, e.clientY), item: it, start: { w: it.w, h: it.h }, before: snapshot() };
     } else if (tool === 'select') {
       const p = toPage(e.clientX, e.clientY);
       const b = selection.size ? selectionBounds() : null;
@@ -690,6 +726,14 @@ export function createEditor(viewport, hooks = {}) {
       g.dx = p.x - g.from.x;
       g.dy = p.y - g.from.y;
       moveSelectionPreview(g.dx, g.dy);
+    } else if (g.kind === 'resize') {
+      const p = toPage(e.clientX, e.clientY);
+      const w = Math.max(60, g.start.w + (p.x - g.from.x));
+      g.w = Math.round(w);
+      g.h = Math.round((w * g.start.h) / g.start.w);
+      const el = els.get(g.item.id);
+      Object.assign(el.style, { width: g.w + 'px', height: g.h + 'px' });
+      Object.assign(selBox.style, { width: g.w + 12 + 'px', height: g.h + 12 + 'px' });
     } else if (g.kind === 'marquee') {
       const p = toPage(e.clientX, e.clientY);
       const r = rectFromPoints(g.from.x, g.from.y, p.x, p.y);
@@ -730,20 +774,32 @@ export function createEditor(viewport, hooks = {}) {
       if (g.changed) { pushUndo(g.before); commit(); }
     } else if (g.kind === 'move') {
       if (g.dx || g.dy) moveSelectionCommit(g.dx || 0, g.dy || 0, g.before);
+    } else if (g.kind === 'resize') {
+      if (g.w) {
+        Object.assign(g.item, { w: g.w, h: g.h });
+        renderSelection();
+        pushUndo(g.before);
+        commit();
+      }
     } else if (g.kind === 'marquee') {
       marquee.hidden = true;
       if (!g.rect || (g.rect.w * view.z < 4 && g.rect.h * view.z < 4)) {
-        const hit = hitStrokeAt(g.from);
+        const hit = hitItemAt(g.from);
         setSelection(hit ? [hit.id] : []);
       } else {
-        const ids = items.filter((it) => (it.type === 'stroke' ? strokeInRect(it, g.rect) : rectsIntersect(itemBounds(it), g.rect))).map((it) => it.id);
+        // 圖片要整張框進去才選，不然在投影片上框選筆跡會連圖片一起選到
+        const ids = items.filter((it) => {
+          if (it.type === 'stroke') return strokeInRect(it, g.rect);
+          if (it.type === 'image') return rectContains(g.rect, it);
+          return rectsIntersect(itemBounds(it), g.rect);
+        }).map((it) => it.id);
         setSelection(ids);
       }
     } else if (g.kind === 'tap-or-pan') {
       if (tool === 'text') {
         createTextAt(g.from.x, g.from.y);
       } else {
-        const hit = hitStrokeAt(g.from);
+        const hit = hitItemAt(g.from);
         setSelection(hit ? [hit.id] : []);
       }
     }
@@ -827,6 +883,49 @@ export function createEditor(viewport, hooks = {}) {
     emitHistory();
   }
 
+  // 頁面目前內容的最下緣，新匯入的東西往下接
+  function contentBottom() {
+    let bottom = 120;
+    for (const it of items) {
+      const b = itemBounds(it);
+      bottom = Math.max(bottom, b.y + b.h);
+    }
+    return bottom;
+  }
+
+  // list: [{ asset, w, h }]（w、h 是要顯示的大小）。at: 'below' 接在內容下面往下排；'view' 放在目前看到的地方。
+  function insertImages(list, { at = 'below' } = {}) {
+    if (!page || !list.length) return [];
+    blurText();
+    const before = snapshot();
+    const created = [];
+    let x = 64;
+    let y = contentBottom() + 32;
+    if (at === 'view') {
+      const r = viewport.getBoundingClientRect();
+      const c = toPage(r.left + r.width / 2, r.top + r.height / 2);
+      x = Math.max(16, Math.round(c.x - list[0].w / 2));
+      y = Math.max(16, Math.round(c.y - list[0].h / 2));
+    }
+    for (const img of list) {
+      const it = { id: newId('i_'), type: 'image', x, y: Math.round(y), w: Math.round(img.w), h: Math.round(img.h), asset: img.asset };
+      items.push(it);
+      renderItem(it);
+      created.push(it.id);
+      y += img.h + 24;
+    }
+    // 圖片放在最底層：重新排一次 DOM 不需要，因為圖片有自己的圖層
+    if (at === 'below') {
+      const first = items.find((it) => it.id === created[0]);
+      view.y = Math.min(48, -(first.y - 24) * view.z);
+      applyView();
+    }
+    setSelection(tool === 'select' ? created : []);
+    pushUndo(before);
+    commit();
+    return created;
+  }
+
   function setTool(name) {
     if (tool === name) return;
     blurText();
@@ -876,6 +975,7 @@ export function createEditor(viewport, hooks = {}) {
     hasSelection: () => selection.size > 0,
     clearSelection: () => setSelection([]),
     applyInkToText,
+    insertImages,
     penStrokes: () => JSON.parse(JSON.stringify(items.filter((it) => it.type === 'stroke' && it.tool !== 'highlighter'))),
     setBusy(busy) { selbar.classList.toggle('busy', busy); selbar.querySelector('[data-act="ink2text"]').disabled = busy; },
   };

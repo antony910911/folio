@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const ORDER = ['icons', 'ink', 'model', 'layout', 'store', 'editor', 'inkrender', 'vendor', 'recognize', 'exporter', 'app']; // 被依賴的在前面
+const ORDER = ['icons', 'ink', 'model', 'layout', 'store', 'editor', 'inkrender', 'vendor', 'recognize', 'exporter', 'importer', 'app']; // 被依賴的在前面
 
 function bundleModule(name) {
   let src = readFileSync(join(root, 'js', name + '.js'), 'utf8');
@@ -39,6 +39,9 @@ ${css}
 globalThis.FOLIO_VENDOR = {
   pptx: 'https://cdn.jsdelivr.net/npm/pptxgenjs@4.0.1/dist/pptxgen.bundle.js',
   docx: 'https://cdn.jsdelivr.net/npm/docx@9.7.2/dist/index.iife.js',
+  pdfjs: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/legacy/build/pdf.min.mjs',
+  pdfjsWorker: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/legacy/build/pdf.worker.min.mjs',
+  pdfjsBase: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/',
 };
 ${js}
 </script>

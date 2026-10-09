@@ -84,3 +84,34 @@ test('項目格式檢查', () => {
   assert.ok(!isValidItem({ id: 'a', type: 'text', x: 0, y: 0, w: Infinity, html: '' }));
   assert.ok(!isValidItem({ id: 'a', type: 'stroke', points: [] }));
 });
+
+test('頁數範圍', async () => {
+  const { parsePageRange } = await import('../js/model.js');
+  assert.deepEqual(parsePageRange('', 3), [1, 2, 3]);
+  assert.deepEqual(parsePageRange('1-3, 5', 10), [1, 2, 3, 5]);
+  assert.deepEqual(parsePageRange('8-', 10), [8, 9, 10]);
+  assert.deepEqual(parsePageRange('-2', 10), [1, 2]);
+  assert.deepEqual(parsePageRange('2～4，2', 10), [2, 3, 4]);
+  assert.deepEqual(parsePageRange('9-20', 10), [9, 10]);
+  assert.equal(parsePageRange('5-2', 10), null);
+  assert.equal(parsePageRange('abc', 10), null);
+  assert.equal(parsePageRange('0', 10), null);
+  assert.equal(parsePageRange('20', 10), null);
+});
+
+test('備份檢查：圖片要有對應的檔案才保留', () => {
+  const raw = {
+    app: 'folio', version: 2,
+    notebooks: [{ id: 'n1' }], sections: [{ id: 's1', notebookId: 'n1' }], pages: [{ id: 'p1', sectionId: 's1' }],
+    contents: [{ id: 'p1', items: [
+      { id: 'a', type: 'image', x: 0, y: 0, w: 10, h: 10, asset: 'as1' },
+      { id: 'b', type: 'image', x: 0, y: 0, w: 10, h: 10, asset: 'missing' },
+      { id: 'c', type: 'image', x: 0, y: 0, w: 0, h: 10, asset: 'as1' },
+    ] }],
+    assets: [{ id: 'as1', type: 'image/jpeg', w: 100, h: 50, data: 'AAAA' }, { id: 'bad', type: 'text/html', w: 1, h: 1, data: 'x' }],
+  };
+  const res = validateBackup(raw);
+  assert.ok(res.ok);
+  assert.deepEqual(res.data.contents[0].items.map((i) => i.id), ['a']);
+  assert.deepEqual(res.data.assets.map((a) => a.id), ['as1']);
+});

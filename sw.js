@@ -1,6 +1,6 @@
 // 離線快取：App 本身的檔案先從快取讀，背景再更新。
 // 新增或改名檔案時請更新 FILES 並把 VERSION 加一。
-const VERSION = 'v2';
+const VERSION = 'v3';
 const CACHE = `folio-${VERSION}`;
 const FILES = [
   './',
@@ -18,9 +18,13 @@ const FILES = [
   './js/vendor.js',
   './js/recognize.js',
   './js/exporter.js',
+  './js/importer.js',
   './vendor/pptxgen-4.0.1.bundle.js',
   './vendor/docx-9.7.2.iife.js',
   './vendor/anthropic-sdk-0.128.0.mjs',
+  './vendor/pdfjs-6.3.289/pdf.min.mjs',
+  './vendor/pdfjs-6.3.289/pdf.worker.min.mjs',
+  // 中文字型對照表等檔案很多，用到時才會存進快取（見下面的 fetch）
   './icons/icon.svg',
   './icons/apple-touch-icon.png',
   './icons/icon-192.png',

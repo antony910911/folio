@@ -3,7 +3,7 @@
 
 export const SECTION_COLORS = ['#3d6fd8', '#d9534f', '#2f9e6e', '#d98b2b', '#8a5cd1', '#c2478f', '#2b9bb3', '#6b7280'];
 export const BACKGROUNDS = ['blank', 'ruled', 'grid', 'dots'];
-export const BACKUP_VERSION = 1;
+export const BACKUP_VERSION = 2;
 
 export function newId(prefix = '') {
   const rnd = (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID().replace(/-/g, '').slice(0, 16)
@@ -81,11 +81,14 @@ export function validateBackup(raw) {
   const scIds = new Set(sections.map((s) => s.id));
   const pages = (raw.pages || []).filter((p) => isObj(p) && scIds.has(p.sectionId));
   const pgIds = new Set(pages.map((p) => p.id));
+  const assets = (raw.assets || []).filter((a) => isObj(a) && typeof a.data === 'string' && typeof a.type === 'string'
+    && /^image\/(png|jpeg|webp|gif)$/.test(a.type) && [a.w, a.h].every((v) => typeof v === 'number' && v > 0));
+  const assetIds = new Set(assets.map((a) => a.id));
   const contents = (raw.contents || [])
     .filter((c) => isObj(c) && pgIds.has(c.id) && Array.isArray(c.items))
-    .map((c) => ({ id: c.id, items: c.items.filter(isValidItem) }));
+    .map((c) => ({ id: c.id, items: c.items.filter((it) => isValidItem(it) && (it.type !== 'image' || assetIds.has(it.asset))) }));
   if (!notebooks.length) return { ok: false, error: '備份裡沒有任何筆記本。' };
-  return { ok: true, data: { notebooks, sections, pages, contents } };
+  return { ok: true, data: { notebooks, sections, pages, contents, assets } };
 }
 
 export function isValidItem(it) {
@@ -95,6 +98,7 @@ export function isValidItem(it) {
       && it.points.every((p) => Array.isArray(p) && p.length >= 2 && p.every((v) => typeof v === 'number' && isFinite(v)));
   }
   if (it.type === 'text') return [it.x, it.y, it.w].every((v) => typeof v === 'number' && isFinite(v)) && typeof it.html === 'string';
+  if (it.type === 'image') return [it.x, it.y, it.w, it.h].every((v) => typeof v === 'number' && isFinite(v)) && it.w > 0 && it.h > 0 && typeof it.asset === 'string';
   return false;
 }
 
@@ -110,7 +114,7 @@ export function seedData(now = Date.now()) {
     items: [
       { id: newId('t_'), type: 'text', x: 64, y: 156, w: 460, html: '<b>這是示範頁面，可以直接改或刪掉。</b>' },
       { id: newId('t_'), type: 'text', x: 64, y: 200, w: 460, html: '左邊是分區和頁面，跟 OneNote 一樣：筆記本 › 分區 › 頁面。' },
-      { id: newId('t_'), type: 'text', x: 64, y: 268, w: 460, html: '<b>寫字</b>：選上方的「筆」，用 Apple Pencil 直接寫。用過 Pencil 後，手指會自動改成捲動頁面，手掌放在螢幕上也不會畫到。<br><b>打字</b>：選「文字」，點頁面任何位置就能新增文字框，拖曳上方的橫條可以移動。<br><b>選取</b>：用「選取」框住筆跡或文字框，可以移動、複製或刪除。<br><b>轉文字</b>：用「選取」框住手寫，點「轉成文字」。<br><b>匯出</b>：右上角「⋯」裡可以匯出 PowerPoint 或 Word。<br><b>縮放</b>：兩指捏合，電腦上按住 Ctrl 加滾輪。' },
+      { id: newId('t_'), type: 'text', x: 64, y: 268, w: 460, html: '<b>寫字</b>：選上方的「筆」，用 Apple Pencil 直接寫。用過 Pencil 後，手指會自動改成捲動頁面，手掌放在螢幕上也不會畫到。<br><b>打字</b>：選「文字」，點頁面任何位置就能新增文字框，拖曳上方的橫條可以移動。<br><b>選取</b>：用「選取」框住筆跡或文字框，可以移動、複製或刪除。<br><b>轉文字</b>：用「選取」框住手寫，點「轉成文字」。<br><b>簡報</b>：按工具列的圖片按鈕匯入 PDF，就能直接在投影片上寫。<br><b>匯出</b>：右上角「⋯」裡可以匯出 PowerPoint 或 Word。<br><b>縮放</b>：兩指捏合，電腦上按住 Ctrl 加滾輪。' },
       { id: newId('t_'), type: 'text', x: 600, y: 150, w: 280, html: '資料只存在這台裝置。換裝置前，先用右上角「⋯ › 備份檔」。跨裝置同步是下一步要做的功能。' },
       sampleStroke(),
     ],
@@ -126,4 +130,20 @@ function sampleStroke() {
     points.push([70 + t * 262, 188 + Math.sin(t * Math.PI * 3) * 2.5, Math.round((0.35 + Math.sin(t * Math.PI) * 0.6) * 100) / 100]);
   }
   return { id: newId('s_'), type: 'stroke', tool: 'pen', color: '#d9534f', size: 3, points };
+}
+
+// 「1-3, 5, 8-」這種頁數範圍轉成頁碼陣列（從 1 開始）。空白代表全部。格式不對回傳 null。
+export function parsePageRange(text, count) {
+  const t = (text || '').replace(/，/g, ',').replace(/[～~—–]/g, '-').trim();
+  if (!t) return Array.from({ length: count }, (_, i) => i + 1);
+  const pages = new Set();
+  for (const part of t.split(',').map((x) => x.trim()).filter(Boolean)) {
+    const m = part.match(/^(\d*)\s*(-?)\s*(\d*)$/);
+    if (!m || (!m[1] && !m[3])) return null;
+    const from = m[1] ? Number(m[1]) : 1;
+    const to = m[2] ? (m[3] ? Number(m[3]) : count) : from;
+    if (from < 1 || to < from) return null;
+    for (let i = from; i <= Math.min(to, count); i++) pages.add(i);
+  }
+  return pages.size ? [...pages].sort((a, b) => a - b) : null;
 }

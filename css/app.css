@@ -677,3 +677,58 @@ button.ghost { background: color-mix(in srgb, var(--fg) 7%, transparent); }
   font-weight: 600;
   cursor: pointer;
 }
+
+/* ---------- 圖片（匯入的 PDF 頁面、截圖） ---------- */
+.images { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.pimg {
+  position: absolute;
+  display: block;
+  max-width: none;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(20, 28, 45, .1), 0 2px 8px rgba(20, 28, 45, .08);
+  -webkit-user-drag: none;
+  user-select: none;
+}
+.pimg.missing { background: repeating-linear-gradient(45deg, #eef0f4 0 10px, #e2e6ed 10px 20px); }
+.pimg.selected { outline: calc(2px / var(--z)) solid #2f55c9; outline-offset: calc(2px / var(--z)); }
+.sel-resize {
+  position: absolute;
+  right: calc(-9px / var(--z));
+  bottom: calc(-9px / var(--z));
+  width: calc(18px / var(--z));
+  height: calc(18px / var(--z));
+  border-radius: 50%;
+  background: #fff;
+  border: calc(2px / var(--z)) solid #2f55c9;
+  pointer-events: auto;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+.viewport.dropping::after {
+  content: "放開就能匯入";
+  position: absolute;
+  inset: 12px;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 10;
+}
+.import-opts { display: grid; gap: 8px; margin: 0 0 14px; }
+.import-opt {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.import-opt:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.import-opt input { margin-top: 3px; accent-color: var(--accent); }
+.import-opt small { display: block; color: var(--muted); font-size: 12.5px; }

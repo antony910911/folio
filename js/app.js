@@ -3,7 +3,7 @@
 import * as store from './store.js';
 import {
   createNotebook, createSection, createPage, emptyContent, sortByOrder, moveInOrder, cascadeIds,
-  pageDisplayTitle, validateBackup, SECTION_COLORS, BACKGROUNDS,
+  pageDisplayTitle, validateBackup, parsePageRange, SECTION_COLORS, BACKGROUNDS,
 } from './model.js';
 import { createEditor, formatDate } from './editor.js';
 import { icons } from './icons.js';
@@ -12,6 +12,7 @@ import { clusterBoxes } from './layout.js';
 import { renderStrokes, canvasToBlob } from './inkrender.js';
 import { exportPptx, exportDocx, saveFile, safeFilename } from './exporter.js';
 import { recognize, backend, getApiKey, setApiKey } from './recognize.js';
+import { fileKind, openPdf, prepareImage } from './importer.js';
 
 const PEN_COLORS = ['#1f2a44', '#d9534f', '#2f6fd8', '#2f9e6e', '#8a5cd1'];
 const HL_COLORS = ['#f5d33b', '#86d46b', '#6cc4f0', '#f59bc4', '#f5a65b'];
@@ -76,6 +77,7 @@ app.innerHTML = `
       <button type="button" class="icon-btn" id="toggle-sidebar" title="顯示／隱藏側邊欄" aria-label="顯示或隱藏側邊欄">${icons.sidebar}</button>
       <div class="tool-group" id="tools" role="toolbar" aria-label="工具"></div>
       <div class="tool-opts" id="tool-opts"></div>
+      <button type="button" class="icon-btn" id="insert" title="插入 PDF 或圖片" aria-label="插入 PDF 或圖片">${icons.insert}</button>
       <div class="spacer"></div>
       <button type="button" class="icon-btn" id="undo" title="復原 (⌘Z)" aria-label="復原">${icons.undo}</button>
       <button type="button" class="icon-btn" id="redo" title="重做 (⇧⌘Z)" aria-label="重做">${icons.redo}</button>
@@ -93,7 +95,8 @@ app.innerHTML = `
   <div class="menu" id="menu" role="menu" hidden></div>
   <dialog class="dlg" id="dlg"><form method="dialog" id="dlg-form"></form></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <input type="file" id="import-file" accept="application/json,.json" hidden>`;
+  <input type="file" id="import-file" accept="application/json,.json" hidden>
+  <input type="file" id="insert-file" accept="application/pdf,.pdf,image/png,image/jpeg,image/webp,image/gif,.pptx,.ppt,.key" multiple hidden>`;
 
 const $ = (id) => document.getElementById(id);
 const editorEl = $('editor');
@@ -123,7 +126,17 @@ async function flush() {
   }
 }
 
+// 圖片 id → 物件網址（同一張圖只讀一次）
+const assetUrls = new Map();
+function assetUrl(id) {
+  if (!assetUrls.has(id)) {
+    assetUrls.set(id, store.getAsset(id).then((a) => (a ? URL.createObjectURL(a.blob) : null)).catch(() => null));
+  }
+  return assetUrls.get(id);
+}
+
 const editor = createEditor(editorEl, {
+  assetUrl,
   onChange(page, content) {
     pendingContent.set(page.id, content);
     pendingPages.add(page.id);
@@ -214,6 +227,8 @@ $('more').addEventListener('click', (e) => {
     { label: '只用 Apple Pencil 寫字', hint: '手指只負責捲動', check: prefs.penOnly, action: togglePenOnly },
     { label: '放大', action: () => editor.zoomBy(1.25) },
     { label: '縮小', action: () => editor.zoomBy(0.8) },
+    { sep: true },
+    { label: '插入 PDF 或圖片…', hint: '簡報請先另存成 PDF', action: () => $('insert-file').click(), disabled: !page },
     { sep: true },
     { heading: '手寫辨識' },
     { label: '整頁手寫轉文字', hint: '只轉這一頁的筆跡，螢光筆不算', action: () => inkToText(editor.penStrokes()), disabled: !page },
@@ -535,7 +550,8 @@ async function runExport(kind, scope) {
       entries.push({ page: p, items: c ? c.items : [] });
     }
     const title = scope === 'page' ? pageDisplayTitle(pages[0]) : sc.name;
-    const blob = kind === 'pptx' ? await exportPptx(entries, title) : await exportDocx(entries, title);
+    const getAsset = (id) => store.getAsset(id);
+    const blob = kind === 'pptx' ? await exportPptx(entries, title, getAsset) : await exportDocx(entries, title, getAsset);
     await deliver(blob, `${safeFilename(title)}.${kind}`);
   } catch (e) {
     console.error(e);
@@ -640,11 +656,164 @@ $('import-file').addEventListener('change', async (e) => {
   const ok = await askConfirm({ title: '匯入備份？', message: `會加入 ${notebooks.length} 本筆記本、${pages.length} 個頁面。id 相同的頁面會被備份的版本取代。`, ok: '匯入' });
   if (!ok) return;
   await flush();
-  await store.putMany(res.data);
+  await store.putMany({ ...res.data, assets: store.unpackAssets(res.data.assets) });
   Object.assign(state, await store.loadIndex());
   openNotebook(notebooks[0].id);
   toast('匯入完成。');
 });
+
+// ---------- 插入 PDF、圖片 ----------
+let importing = false;
+
+$('insert').addEventListener('click', () => {
+  if (!editor.page) { toast('請先新增一個頁面。'); return; }
+  $('insert-file').click();
+});
+$('insert-file').addEventListener('change', (e) => {
+  const files = [...e.target.files];
+  e.target.value = '';
+  handleFiles(files, 'below');
+});
+
+// 貼上截圖
+document.addEventListener('paste', (e) => {
+  if (editor.isTyping() || dlg.open) return;
+  const files = [...(e.clipboardData?.files || [])].filter((f) => fileKind(f) === 'image' || fileKind(f) === 'pdf');
+  if (!files.length) return;
+  e.preventDefault();
+  handleFiles(files, 'view');
+});
+
+// 拖放檔案到頁面上
+let dragDepth = 0;
+editorEl.addEventListener('dragenter', (e) => {
+  if (![...e.dataTransfer.types].includes('Files')) return;
+  e.preventDefault();
+  dragDepth++;
+  editorEl.classList.add('dropping');
+});
+editorEl.addEventListener('dragover', (e) => {
+  if ([...e.dataTransfer.types].includes('Files')) e.preventDefault();
+});
+editorEl.addEventListener('dragleave', () => {
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) editorEl.classList.remove('dropping');
+});
+editorEl.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dragDepth = 0;
+  editorEl.classList.remove('dropping');
+  handleFiles([...e.dataTransfer.files], 'view');
+});
+
+async function handleFiles(files, at) {
+  if (!files.length) return;
+  if (!editor.page) { toast('請先新增一個頁面。'); return; }
+  if (importing) { toast('還在匯入上一個檔案，請稍等。'); return; }
+  const kinds = files.map(fileKind);
+  if (kinds.includes('slides')) {
+    toast('PowerPoint／Keynote 檔請先另存成 PDF 再匯入。PowerPoint：檔案 › 匯出 › PDF；Keynote：檔案 › 輸出為 › PDF。');
+    return;
+  }
+  if (kinds.includes('heic')) { toast('HEIC 照片目前不支援，請先轉成 JPEG（iPad 上「拷貝」再貼上通常就會自動轉）。'); return; }
+  if (kinds.includes('other')) { toast('只能匯入 PDF 或圖片（PNG、JPEG、WebP、GIF）。'); return; }
+  importing = true;
+  try {
+    const images = files.filter((f, i) => kinds[i] === 'image');
+    if (images.length) await importImages(images, at);
+    for (const f of files.filter((f, i) => kinds[i] === 'pdf')) await importPdf(f);
+  } catch (e) {
+    console.error(e);
+    toast(e && e.message ? `匯入失敗：${e.message}` : '匯入失敗，請再試一次。');
+  } finally {
+    importing = false;
+  }
+}
+
+async function saveAsset(prepared) {
+  const asset = { id: newAssetId(), blob: prepared.blob, w: prepared.w, h: prepared.h };
+  await store.putAsset(asset);
+  return asset.id;
+}
+
+function newAssetId() {
+  return 'as_' + (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '').slice(0, 16) : Math.random().toString(36).slice(2) + Date.now().toString(36));
+}
+
+async function importImages(files, at) {
+  toast('正在匯入圖片…', { sticky: true });
+  const list = [];
+  for (const f of files) {
+    const prepared = await prepareImage(f);
+    list.push({ asset: await saveAsset(prepared), ...prepared.display });
+  }
+  editor.insertImages(list, { at: files.length > 1 ? 'below' : at });
+  toast(files.length > 1 ? `已插入 ${files.length} 張圖片。` : '已插入圖片。');
+}
+
+async function importPdf(file) {
+  toast('正在讀取 PDF…', { sticky: true });
+  let pdf;
+  try {
+    pdf = await openPdf(file);
+  } catch (e) {
+    console.error(e);
+    if (e && e.name === 'PasswordException') throw new Error('這個 PDF 有密碼保護，請先移除密碼。');
+    throw new Error('讀不懂這個 PDF。');
+  }
+  try {
+    hideToast();
+    const choice = await askPdfOptions(file.name, pdf.count);
+    if (!choice) return;
+    const pageNumbers = parsePageRange(choice.range, pdf.count);
+    if (!pageNumbers) { toast('頁數範圍看不懂，請寫成像「1-5, 8」這樣。'); return; }
+    const rendered = [];
+    for (const [i, n] of pageNumbers.entries()) {
+      toast(`正在匯入第 ${i + 1} / ${pageNumbers.length} 頁…`, { sticky: true });
+      const r = await pdf.render(n);
+      rendered.push({ n, asset: await saveAsset(r), ...r.display });
+    }
+    const base = file.name.replace(/\.pdf$/i, '');
+    if (choice.mode === 'here') {
+      editor.insertImages(rendered.map(({ asset, w, h }) => ({ asset, w, h })), { at: 'below' });
+      toast(`已插入 ${rendered.length} 頁，可以直接在上面寫字。`);
+    } else {
+      await flush();
+      const siblings = pagesOf(state.sectionId);
+      const newPages = [];
+      const contents = [];
+      for (const r of rendered) {
+        const pg = { ...createPage(state.sectionId, [...siblings, ...newPages]), title: `${base} 第 ${r.n} 頁`, background: 'blank' };
+        newPages.push(pg);
+        contents.push({ id: pg.id, items: [{ id: 'i_' + pg.id.slice(3), type: 'image', x: 64, y: 150, w: r.w, h: r.h, asset: r.asset }] });
+      }
+      state.pages.push(...newPages);
+      await store.putMany({ pages: newPages, contents });
+      await openPage(newPages[0].id);
+      toast(`已建立 ${newPages.length} 個頁面。`);
+    }
+  } finally {
+    pdf.destroy();
+  }
+}
+
+function askPdfOptions(name, count) {
+  dlgForm.innerHTML = `
+    <h2 class="dlg-title">匯入「${esc(name)}」</h2>
+    <p class="dlg-msg">共 ${count} 頁。每一頁會變成一張圖片，可以直接用筆在上面寫。</p>
+    <div class="import-opts" role="radiogroup" aria-label="放在哪裡">
+      <label class="import-opt"><input type="radio" name="pdf-mode" value="here" checked><span>全部放在這一頁<small>由上往下排，適合邊看簡報邊寫筆記</small></span></label>
+      <label class="import-opt"><input type="radio" name="pdf-mode" value="pages"><span>每一頁建立一個新頁面<small>頁面標題是「檔名 第 n 頁」</small></span></label>
+    </div>
+    <label class="dlg-label" for="dlg-range">頁數範圍</label>
+    <input class="dlg-input" id="dlg-range" autocomplete="off" placeholder="全部，或像 1-5, 8">
+    ${count > 40 ? '<p class="dlg-hint">頁數很多時，匯入會花一點時間，也會佔用比較多儲存空間。</p>' : ''}
+    <div class="dlg-actions"><button type="button" class="ghost" id="dlg-cancel">取消</button><button class="primary" value="ok">匯入</button></div>`;
+  return showDialog(
+    () => ({ mode: dlgForm.querySelector('[name=pdf-mode]:checked').value, range: $('dlg-range').value }),
+    () => dlgForm.querySelector('[value=ok]').focus(),
+  );
+}
 
 // ---------- 選單 ----------
 const menu = $('menu');
@@ -805,6 +974,7 @@ function shortDate(ts) {
 // ---------- 啟動 ----------
 async function boot() {
   Object.assign(state, await store.init());
+  store.gcAssets().catch(() => { /* 清不掉下次再清 */ });
   store.requestPersist();
   if (narrow.matches) prefs.sidebar = false; // 手機上側邊欄預設收起來
   applySidebar();
