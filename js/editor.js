@@ -6,6 +6,7 @@ import {
   rectFromPoints, rectsIntersect, pointInRect, compactPoints, translateStroke,
 } from './ink.js';
 import { newId } from './model.js';
+import { textToHtml } from './layout.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const DRAW_TOOLS = new Set(['pen', 'highlighter', 'eraser']);
@@ -57,6 +58,7 @@ export function createEditor(viewport, hooks = {}) {
       <div class="marquee" hidden></div>
     </div>
     <div class="selbar" hidden>
+      <button type="button" data-act="ink2text">轉成文字</button>
       <button type="button" data-act="duplicate">複製</button>
       <button type="button" data-act="delete" class="danger">刪除</button>
     </div>
@@ -278,6 +280,7 @@ export function createEditor(viewport, hooks = {}) {
     selBox.hidden = false;
     Object.assign(selBox.style, { left: b.x - pad + 'px', top: b.y - pad + 'px', width: b.w + pad * 2 + 'px', height: b.h + pad * 2 + 'px', transform: '' });
     selbar.hidden = false;
+    selbar.querySelector('[data-act="ink2text"]').hidden = !selectedPenStrokes().length;
     positionSelbar();
     emit('onSelection', selection.size);
   }
@@ -294,6 +297,29 @@ export function createEditor(viewport, hooks = {}) {
     const top = sy - 52 < 8 ? (b.y + b.h + dy) * view.z + view.y + 14 : sy - 52;
     selbar.style.left = left + 'px';
     selbar.style.top = top + 'px';
+  }
+
+  function selectedPenStrokes() {
+    return items.filter((it) => selection.has(it.id) && it.type === 'stroke' && it.tool !== 'highlighter');
+  }
+
+  // 手寫辨識的結果換掉原本的筆跡，整批算一步復原。results: [{ ids, x, y, w, text }]
+  function applyInkToText(pageId, results) {
+    if (!page || page.id !== pageId || !results.length) return false;
+    blurText();
+    const before = snapshot();
+    const created = [];
+    for (const r of results) {
+      for (const id of r.ids) removeItem(id);
+      const it = { id: newId('t_'), type: 'text', x: Math.round(r.x), y: Math.round(r.y), w: Math.max(160, Math.round(r.w + 24)), html: textToHtml(r.text) };
+      items.push(it);
+      renderItem(it);
+      created.push(it.id);
+    }
+    setSelection(tool === 'select' ? created : []);
+    pushUndo(before);
+    commit();
+    return true;
   }
 
   function setSelection(ids) {
@@ -765,6 +791,7 @@ export function createEditor(viewport, hooks = {}) {
     const act = e.target.closest('button')?.dataset.act;
     if (act === 'delete') deleteSelection();
     if (act === 'duplicate') duplicateSelection();
+    if (act === 'ink2text') emit('onInkToText', JSON.parse(JSON.stringify(selectedPenStrokes())));
   });
 
   titleInput.addEventListener('input', () => {
@@ -848,6 +875,9 @@ export function createEditor(viewport, hooks = {}) {
     get page() { return page; },
     hasSelection: () => selection.size > 0,
     clearSelection: () => setSelection([]),
+    applyInkToText,
+    penStrokes: () => JSON.parse(JSON.stringify(items.filter((it) => it.type === 'stroke' && it.tool !== 'highlighter'))),
+    setBusy(busy) { selbar.classList.toggle('busy', busy); selbar.querySelector('[data-act="ink2text"]').disabled = busy; },
   };
 }
 

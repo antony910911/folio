@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const ORDER = ['icons', 'ink', 'model', 'store', 'editor', 'app']; // 被依賴的在前面
+const ORDER = ['icons', 'ink', 'model', 'layout', 'store', 'editor', 'inkrender', 'vendor', 'recognize', 'exporter', 'app']; // 被依賴的在前面
 
 function bundleModule(name) {
   let src = readFileSync(join(root, 'js', name + '.js'), 'utf8');
@@ -17,10 +17,11 @@ function bundleModule(name) {
   });
   if (/\bimport\s/.test(src.replace(/\/\/.*$/gm, ''))) throw new Error(`${name}.js 有無法處理的 import`);
   const names = [];
-  src = src.replace(/export\s+((?:async\s+)?function\s+(\w+)|(?:const|let)\s+(\w+))/g, (_, decl, fn, v) => {
-    names.push(fn || v);
+  src = src.replace(/export\s+((?:async\s+)?function\s+(\w+)|class\s+(\w+)|(?:const|let)\s+(\w+))/g, (_, decl, fn, cls, v) => {
+    names.push(fn || cls || v);
     return decl;
   });
+  if (/^\s*export\s/m.test(src)) throw new Error(`${name}.js 有無法處理的 export`);
   const exportsObj = names.map((n) => `get ${n}() { return ${n}; }`).join(', ');
   return `const __${name} = (() => {\n${src}\nreturn { ${exportsObj} };\n})();`;
 }
@@ -34,6 +35,11 @@ ${css}
 </style>
 <div id="app"></div>
 <script type="module">
+// 預覽環境只能從 CDN 載入外部程式，匯出用的函式庫改從 jsDelivr 拿（版本和 vendor/ 裡的相同）
+globalThis.FOLIO_VENDOR = {
+  pptx: 'https://cdn.jsdelivr.net/npm/pptxgenjs@4.0.1/dist/pptxgen.bundle.js',
+  docx: 'https://cdn.jsdelivr.net/npm/docx@9.7.2/dist/index.iife.js',
+};
 ${js}
 </script>
 `;

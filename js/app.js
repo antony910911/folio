@@ -7,6 +7,11 @@ import {
 } from './model.js';
 import { createEditor, formatDate } from './editor.js';
 import { icons } from './icons.js';
+import { strokeBounds } from './ink.js';
+import { clusterBoxes } from './layout.js';
+import { renderStrokes, canvasToBlob } from './inkrender.js';
+import { exportPptx, exportDocx, saveFile, safeFilename } from './exporter.js';
+import { recognize, backend, getApiKey, setApiKey } from './recognize.js';
 
 const PEN_COLORS = ['#1f2a44', '#d9534f', '#2f6fd8', '#2f9e6e', '#8a5cd1'];
 const HL_COLORS = ['#f5d33b', '#86d46b', '#6cc4f0', '#f59bc4', '#f5a65b'];
@@ -137,6 +142,9 @@ const editor = createEditor(editorEl, {
   onZoom(z) {
     $('zoom').textContent = Math.round(z * 100) + '%';
   },
+  onInkToText(strokes) {
+    inkToText(strokes);
+  },
   onPenDetected() {
     prefs.penOnly = true;
     savePrefs();
@@ -207,7 +215,16 @@ $('more').addEventListener('click', (e) => {
     { label: '放大', action: () => editor.zoomBy(1.25) },
     { label: '縮小', action: () => editor.zoomBy(0.8) },
     { sep: true },
-    { label: '匯出備份', action: exportBackup },
+    { heading: '手寫辨識' },
+    { label: '整頁手寫轉文字', hint: '只轉這一頁的筆跡，螢光筆不算', action: () => inkToText(editor.penStrokes()), disabled: !page },
+    { label: '手寫辨識設定…', action: openRecognizeSettings },
+    { sep: true },
+    { heading: '匯出' },
+    { label: 'PowerPoint：這一頁', action: () => runExport('pptx', 'page'), disabled: !page },
+    { label: 'PowerPoint：整個分區', action: () => runExport('pptx', 'section'), disabled: !state.sectionId },
+    { label: 'Word：這一頁', action: () => runExport('docx', 'page'), disabled: !page },
+    { label: 'Word：整個分區', action: () => runExport('docx', 'section'), disabled: !state.sectionId },
+    { label: '備份檔', hint: '可以匯入到其他裝置', action: exportBackup },
     { label: '匯入備份…', action: () => $('import-file').click() },
   ]);
 });
@@ -497,25 +514,118 @@ async function reorder(storeName, list, id, delta) {
 async function exportBackup() {
   await flush();
   const data = await store.exportAll();
-  const name = `folio-備份-${new Date().toISOString().slice(0, 10)}.json`;
   const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-  const file = new File([blob], name, { type: 'application/json' });
+  await deliver(blob, `folio-備份-${new Date().toISOString().slice(0, 10)}.json`);
+}
+
+// ---------- 匯出 PowerPoint／Word ----------
+let exporting = false;
+async function runExport(kind, scope) {
+  if (exporting) return;
+  exporting = true;
   try {
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: name });
-      return;
+    await flush();
+    const sc = state.sections.find((x) => x.id === state.sectionId);
+    const pages = scope === 'page' ? [editor.page] : pagesOf(state.sectionId);
+    if (!pages.length || !pages[0]) { toast('這個分區沒有頁面。'); return; }
+    toast(kind === 'pptx' ? '正在產生 PowerPoint…' : '正在產生 Word…', { sticky: true });
+    const entries = [];
+    for (const p of pages) {
+      const c = await store.getContent(p.id);
+      entries.push({ page: p, items: c ? c.items : [] });
     }
+    const title = scope === 'page' ? pageDisplayTitle(pages[0]) : sc.name;
+    const blob = kind === 'pptx' ? await exportPptx(entries, title) : await exportDocx(entries, title);
+    await deliver(blob, `${safeFilename(title)}.${kind}`);
   } catch (e) {
-    if (e && e.name === 'AbortError') return;
+    console.error(e);
+    toast(e && e.message ? e.message : '匯出失敗，請再試一次。');
+  } finally {
+    exporting = false;
   }
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-  toast('已匯出備份。');
+}
+
+async function deliver(blob, filename) {
+  try {
+    const result = await saveFile(blob, filename);
+    if (result === 'saved') toast(`已匯出「${filename}」`);
+    else if (result === 'needs_tap') toastAction('檔案準備好了。', '儲存', () => deliver(blob, filename));
+    else hideToast();
+  } catch (e) {
+    toast(e && e.message ? e.message : '存檔失敗。');
+  }
+}
+
+// ---------- 手寫辨識 ----------
+let recognizing = false;
+async function inkToText(strokes) {
+  if (recognizing) return;
+  const page = editor.page;
+  if (!page) return;
+  if (!strokes.length) { toast('沒有可以辨識的手寫筆跡。'); return; }
+  if (!(await backend())) { openRecognizeSettings(); return; }
+  recognizing = true;
+  editor.setBusy(true);
+  const clusters = clusterBoxes(strokes.map((st) => ({ id: st.id, ...strokeBounds(st) })), 28);
+  toast(clusters.length > 1 ? `辨識中…（${clusters.length} 段）` : '辨識中…', { sticky: true });
+  const results = [];
+  let empty = 0;
+  let firstError = null;
+  try {
+    await mapLimit(clusters, 2, async (c) => {
+      const set = new Set(c.ids);
+      try {
+        const { canvas } = renderStrokes(strokes.filter((st) => set.has(st.id)), { scale: 3, background: '#ffffff', pad: 16, maxSide: 1568 });
+        const text = await recognize(await canvasToBlob(canvas));
+        if (text) results.push({ ids: c.ids, x: c.x, y: c.y, w: c.w, text });
+        else empty++;
+      } catch (e) {
+        console.error(e);
+        firstError = firstError || e;
+      }
+    });
+  } finally {
+    recognizing = false;
+    editor.setBusy(false);
+  }
+  const applied = results.length > 0 && editor.applyInkToText(page.id, results);
+  const notes = [];
+  if (applied) notes.push(`已轉成文字${results.length > 1 ? `（${results.length} 段）` : ''}，按復原可以換回手寫。`);
+  else if (results.length) notes.push('辨識完成時已經換到別頁，所以沒有套用。');
+  if (empty) notes.push(`有 ${empty} 段看不出文字，保留原本的筆跡。`);
+  if (firstError) notes.push(firstError.message || '有部分辨識失敗。');
+  toast(notes.join(' '));
+}
+
+async function mapLimit(list, limit, fn) {
+  let next = 0;
+  const worker = async () => { while (next < list.length) await fn(list[next++]); };
+  await Promise.all(Array.from({ length: Math.min(limit, list.length) }, worker));
+}
+
+async function openRecognizeSettings() {
+  const mode = await backend();
+  const account = mode === 'account';
+  dlgForm.innerHTML = `
+    <h2 class="dlg-title">手寫辨識設定</h2>
+    <p class="dlg-msg">辨識時，選取的手寫筆跡會做成圖片，傳給 Claude 讀成文字，再換成文字框。</p>
+    ${account ? '<p class="dlg-note">現在是在 claude.ai 裡開啟，會直接用你的 Claude 帳號辨識，不需要金鑰。第一次辨識時會先問你是否允許。</p>' : `
+    <label class="dlg-label" for="dlg-key">Anthropic API 金鑰</label>
+    <input class="dlg-input" id="dlg-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…">
+    <p class="dlg-hint">到 console.anthropic.com 申請。費用從你的 API 帳戶扣，金鑰只存在這台裝置。清空後儲存就會刪除。</p>`}
+    <p class="dlg-hint">iPad 也可以用內建的「隨手寫」：在文字框裡直接用 Apple Pencil 寫字，系統會轉成文字。</p>
+    <div class="dlg-actions">${account ? '' : '<button type="button" class="ghost" id="dlg-cancel">取消</button>'}<button class="primary" value="ok">${account ? '知道了' : '儲存'}</button></div>`;
+  if (account) {
+    dlgForm.insertAdjacentHTML('beforeend', '<button type="button" id="dlg-cancel" hidden></button>');
+    await showDialog(() => true, () => dlgForm.querySelector('[value=ok]').focus());
+    return;
+  }
+  const input = $('dlg-key');
+  input.value = getApiKey();
+  const key = await showDialog(() => input.value, () => input.focus());
+  if (key == null) return;
+  setApiKey(key);
+  toast(key.trim() ? '已儲存 API 金鑰。' : '已刪除 API 金鑰。');
 }
 
 $('import-file').addEventListener('change', async (e) => {
@@ -637,12 +747,32 @@ function showDialog(result, onOpen) {
 
 // ---------- 提示 ----------
 let toastTimer = null;
-function toast(msg) {
+function toast(msg, { sticky = false } = {}) {
   const t = $('toast');
   t.textContent = msg;
+  t.classList.remove('has-action');
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 3600);
+  if (!sticky) toastTimer = setTimeout(hideToast, Math.min(8000, 2400 + msg.length * 60));
+}
+
+function toastAction(msg, label, fn) {
+  const t = $('toast');
+  t.innerHTML = '';
+  const span = document.createElement('span');
+  span.textContent = msg;
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = label;
+  b.addEventListener('click', () => { hideToast(); fn(); });
+  t.append(span, b);
+  t.classList.add('show', 'has-action');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, 15000);
+}
+
+function hideToast() {
+  $('toast').classList.remove('show', 'has-action');
 }
 
 // ---------- 鍵盤快速鍵 ----------

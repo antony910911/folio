@@ -646,3 +646,34 @@ button.ghost { background: color-mix(in srgb, var(--fg) 7%, transparent); }
 @media (prefers-reduced-motion: reduce) {
   .sidebar, .toast { transition: none; }
 }
+
+/* ---------- 手寫辨識、匯出 ---------- */
+.selbar button[hidden] { display: none; }
+.selbar.busy [data-act="ink2text"] { opacity: .5; cursor: progress; }
+.dlg-label { display: block; margin: 4px 0 6px; font-size: 13px; font-weight: 600; }
+.dlg-hint { margin: -8px 0 14px; font-size: 13px; color: var(--muted); }
+.dlg-note {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  font-size: 14px;
+}
+.dlg-msg + .dlg-hint, .dlg-note + .dlg-hint { margin-top: 0; }
+.toast.has-action {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  pointer-events: auto;
+}
+.toast button {
+  flex: none;
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: #7d9cf5;
+  color: #10172a;
+  font-weight: 600;
+  cursor: pointer;
+}
