@@ -98,6 +98,7 @@ export function isValidItem(it) {
       && it.points.every((p) => Array.isArray(p) && p.length >= 2 && p.every((v) => typeof v === 'number' && isFinite(v)));
   }
   if (it.type === 'text') return [it.x, it.y, it.w].every((v) => typeof v === 'number' && isFinite(v)) && typeof it.html === 'string';
+  if (it.type === 'mindmap') return [it.x, it.y].every((v) => typeof v === 'number' && isFinite(v)) && isValidTree(it.root);
   if (it.type === 'image') return [it.x, it.y, it.w, it.h].every((v) => typeof v === 'number' && isFinite(v)) && it.w > 0 && it.h > 0 && typeof it.asset === 'string';
   return false;
 }
@@ -114,7 +115,7 @@ export function seedData(now = Date.now()) {
     items: [
       { id: newId('t_'), type: 'text', x: 64, y: 156, w: 460, html: '<b>這是示範頁面，可以直接改或刪掉。</b>' },
       { id: newId('t_'), type: 'text', x: 64, y: 200, w: 460, html: '左邊是分區和頁面，跟 OneNote 一樣：筆記本 › 分區 › 頁面。' },
-      { id: newId('t_'), type: 'text', x: 64, y: 268, w: 460, html: '<b>寫字</b>：選上方的「筆」，用 Apple Pencil 直接寫。用過 Pencil 後，手指會自動改成捲動頁面，手掌放在螢幕上也不會畫到。<br><b>打字</b>：選「文字」，點頁面任何位置就能新增文字框，拖曳上方的橫條可以移動。<br><b>選取</b>：用「選取」框住筆跡或文字框，可以移動、複製或刪除。<br><b>轉文字</b>：用「選取」框住手寫，點「轉成文字」。<br><b>簡報</b>：按工具列的圖片按鈕匯入 PDF，就能直接在投影片上寫。<br><b>匯出</b>：右上角「⋯」裡可以匯出 PowerPoint 或 Word。<br><b>縮放</b>：兩指捏合，電腦上按住 Ctrl 加滾輪。' },
+      { id: newId('t_'), type: 'text', x: 64, y: 268, w: 460, html: '<b>寫字</b>：選上方的「筆」，用 Apple Pencil 直接寫。用過 Pencil 後，手指會自動改成捲動頁面，手掌放在螢幕上也不會畫到。<br><b>打字</b>：選「文字」，點頁面任何位置就能新增文字框，拖曳上方的橫條可以移動。<br><b>選取</b>：用「選取」框住筆跡或文字框，可以移動、複製或刪除。<br><b>轉文字</b>：用「選取」框住手寫，點「轉成文字」。<br><b>簡報</b>：按工具列的圖片按鈕匯入 PDF，就能直接在投影片上寫。<br><b>心智圖</b>：按工具列的心智圖按鈕。選取節點後按 Tab 加子主題、Enter 加同層。<br><b>匯出</b>：右上角「⋯」裡可以匯出 PowerPoint 或 Word。<br><b>縮放</b>：兩指捏合，電腦上按住 Ctrl 加滾輪。' },
       { id: newId('t_'), type: 'text', x: 600, y: 150, w: 280, html: '資料只存在這台裝置。換裝置前，先用右上角「⋯ › 備份檔」。跨裝置同步是下一步要做的功能。' },
       sampleStroke(),
     ],
@@ -146,4 +147,11 @@ export function parsePageRange(text, count) {
     for (let i = from; i <= Math.min(to, count); i++) pages.add(i);
   }
   return pages.size ? [...pages].sort((a, b) => a - b) : null;
+}
+
+// 心智圖的節點樹：每個節點要有 id、text、children，深度有上限
+export function isValidTree(node, depth = 0) {
+  if (!node || typeof node !== 'object' || typeof node.id !== 'string' || typeof node.text !== 'string') return false;
+  if (!Array.isArray(node.children) || depth > 32) return false;
+  return node.children.every((c) => isValidTree(c, depth + 1));
 }

@@ -400,7 +400,7 @@ button.ghost { background: color-mix(in srgb, var(--fg) 7%, transparent); }
 .page-title:focus { border-bottom-color: var(--accent); }
 .page-date { margin-top: 6px; font-size: 13px; color: #7a8291; font-variant-numeric: tabular-nums; white-space: pre; }
 
-.ink { position: absolute; left: 0; top: 0; overflow: visible; z-index: 1; pointer-events: none; }
+.ink { position: absolute; left: 0; top: 0; overflow: visible; z-index: 2; pointer-events: none; }
 .ink path.hl { opacity: .38; mix-blend-mode: multiply; }
 .ink path.selected { filter: drop-shadow(0 0 1.5px var(--accent)); }
 
@@ -732,3 +732,100 @@ button.ghost { background: color-mix(in srgb, var(--fg) 7%, transparent); }
 .import-opt:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
 .import-opt input { margin-top: 3px; accent-color: var(--accent); }
 .import-opt small { display: block; color: var(--muted); font-size: 12.5px; }
+
+/* ---------- 心智圖 ---------- */
+.maps { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+/* 筆跡在心智圖上面，圈起來或畫底線才看得到 */
+.maps ~ .texts { z-index: 3; }
+.mindmap { position: absolute; width: 0; height: 0; pointer-events: auto; }
+.mode-draw .mindmap { pointer-events: none; }
+.mm-edges { position: absolute; overflow: visible; pointer-events: none; }
+.mm-node {
+  --c: #3d6fd8;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: max-content;
+  max-width: 240px;
+  padding: 5px 11px;
+  border: 1.5px solid color-mix(in srgb, var(--c) 45%, #ffffff);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1d2330;
+  font: 15px/1.4 var(--font);
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.mm-node.d0 {
+  padding: 10px 18px;
+  border-color: var(--c);
+  border-radius: 12px;
+  background: var(--c);
+  color: #ffffff;
+  font-size: 19px;
+  font-weight: 700;
+  max-width: 280px;
+}
+.mm-node.d1 {
+  padding: 6px 13px;
+  border-color: var(--c);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--c) 13%, #ffffff);
+  font-size: 16px;
+  font-weight: 600;
+}
+.mm-node.sel { box-shadow: 0 0 0 calc(3px / var(--z)) rgba(47, 85, 201, .45); }
+.mm-text { display: block; min-width: 1em; outline: none; }
+.mm-text[contenteditable="true"], .mm-text[contenteditable="plaintext-only"] { cursor: text; user-select: text; -webkit-user-select: text; }
+.mm-fold {
+  position: absolute;
+  top: 50%;
+  right: -26px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  margin-top: -10px;
+  border-radius: 10px;
+  background: var(--c);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+.mm-node.left .mm-fold { right: auto; left: -26px; }
+.mmbar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--menu-bg);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--line);
+  max-width: calc(100% - 16px);
+  overflow-x: auto;
+}
+.mmbar button {
+  flex: none;
+  height: 34px;
+  min-width: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font-size: 14px;
+  cursor: pointer;
+}
+.mmbar button:hover { background: color-mix(in srgb, var(--fg) 7%, transparent); }
+.mmbar .danger { color: var(--danger); }
+.mmbar .sep { width: 1px; margin: 6px 2px; background: var(--line); }
+body:has(.mmbar:not([hidden])) .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }

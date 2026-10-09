@@ -1,13 +1,17 @@
 // 頁面編輯器：一張可以平移縮放的紙，上面有筆跡（SVG）和文字框（HTML）。
 // 工具：select 選取、hand 平移、pen 筆、highlighter 螢光筆、eraser 橡皮擦、text 文字。
-// 由下到上的圖層：圖片（匯入的 PDF、截圖）→ 筆跡 → 文字框，所以可以直接在投影片上寫字。
+// 由下到上的圖層：圖片（匯入的 PDF、截圖）→ 心智圖 → 筆跡 → 文字框，所以可以直接在投影片和心智圖上寫字。
 
 import {
   strokeOutline, simulatedPressure, strokeHit, strokeBounds, strokeInRect, unionBounds,
   rectFromPoints, rectsIntersect, pointInRect, rectContains, compactPoints, translateStroke,
 } from './ink.js';
 import { newId } from './model.js';
-import { textToHtml } from './layout.js';
+import { textToHtml, htmlToParagraphs } from './layout.js';
+import {
+  defaultMindmap, findNode, findParent, addChild, addSibling, removeNode, moveSibling, outlineToTree, cloneWithNewIds,
+} from './mindmap.js';
+import { renderMindmap } from './mindmap-view.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const DRAW_TOOLS = new Set(['pen', 'highlighter', 'eraser']);
@@ -55,14 +59,26 @@ export function createEditor(viewport, hooks = {}) {
       </div>
       <div class="images"></div>
       <svg class="ink" xmlns="${SVG_NS}"></svg>
+      <div class="maps"></div>
       <div class="texts"></div>
       <div class="sel-box" hidden><div class="sel-resize" hidden title="拖曳調整大小"></div></div>
       <div class="marquee" hidden></div>
     </div>
     <div class="selbar" hidden>
       <button type="button" data-act="ink2text">轉成文字</button>
+      <button type="button" data-act="text2map">轉成心智圖</button>
       <button type="button" data-act="duplicate">複製</button>
       <button type="button" data-act="delete" class="danger">刪除</button>
+    </div>
+    <div class="mmbar" hidden role="toolbar" aria-label="心智圖節點">
+      <button type="button" data-mm="child" title="新增子主題 (Tab)">＋子主題</button>
+      <button type="button" data-mm="sibling" title="新增同層主題 (Enter)">＋同層</button>
+      <span class="sep"></span>
+      <button type="button" data-mm="edit" title="編輯文字 (空白鍵)">編輯</button>
+      <button type="button" data-mm="up" title="上移 (Alt+↑)" aria-label="上移">↑</button>
+      <button type="button" data-mm="down" title="下移 (Alt+↓)" aria-label="下移">↓</button>
+      <button type="button" data-mm="fold">收合</button>
+      <button type="button" data-mm="delete" class="danger" title="刪除 (Delete)">刪除</button>
     </div>
     <div class="eraser-cursor" hidden></div>`;
 
@@ -70,6 +86,8 @@ export function createEditor(viewport, hooks = {}) {
   const svg = viewport.querySelector('.ink');
   const textLayer = viewport.querySelector('.texts');
   const imgLayer = viewport.querySelector('.images');
+  const mapsLayer = viewport.querySelector('.maps');
+  const mmbar = viewport.querySelector('.mmbar');
   const selResize = viewport.querySelector('.sel-resize');
   const titleInput = viewport.querySelector('.page-title');
   const dateEl = viewport.querySelector('.page-date');
@@ -98,6 +116,8 @@ export function createEditor(viewport, hooks = {}) {
   let pinch = null;
   let spaceDown = false;
   let surfaceSize = { w: 2400, h: 3200 };
+  const mapLayouts = new Map(); // 心智圖 id → 最近一次排版
+  let mm = null; // 選取中的心智圖節點：{ itemId, nodeId, editing }
 
   // ---------- 座標與視角 ----------
   function toPage(cx, cy) {
@@ -122,6 +142,7 @@ export function createEditor(viewport, hooks = {}) {
     surface.style.setProperty('--z', view.z);
     if (page) views.set(page.id, { ...view });
     positionSelbar();
+    positionMmbar();
     emit('onZoom', view.z);
   }
 
@@ -140,14 +161,9 @@ export function createEditor(viewport, hooks = {}) {
     let maxX = 0;
     let maxY = 0;
     for (const it of items) {
-      if (it.type === 'stroke') {
-        const b = strokeBounds(it);
-        maxX = Math.max(maxX, b.x + b.w);
-        maxY = Math.max(maxY, b.y + b.h);
-      } else {
-        maxX = Math.max(maxX, it.x + it.w);
-        maxY = Math.max(maxY, it.y + itemBounds(it).h);
-      }
+      const b = itemBounds(it);
+      maxX = Math.max(maxX, b.x + b.w);
+      maxY = Math.max(maxY, b.y + b.h);
     }
     surfaceSize = {
       w: Math.max(1600, maxX + 800),
@@ -194,16 +210,38 @@ export function createEditor(viewport, hooks = {}) {
     return img;
   }
 
+  function mapEl(it) {
+    const el = document.createElement('div');
+    el.className = 'mindmap';
+    el.dataset.id = it.id;
+    el.style.left = it.x + 'px';
+    el.style.top = it.y + 'px';
+    return el;
+  }
+
   function makeEl(it) {
     if (it.type === 'stroke') return strokeEl(it);
     if (it.type === 'image') return imageEl(it);
+    if (it.type === 'mindmap') return mapEl(it);
     return textEl(it);
+  }
+
+  // 心智圖要放進頁面後才量得到大小，所以插入 DOM 之後再排版
+  function refreshMap(it) {
+    const el = els.get(it.id);
+    if (!el || !el.isConnected) return;
+    const layout = renderMindmap(el, it, { selectedId: mm && mm.itemId === it.id ? mm.nodeId : null });
+    mapLayouts.set(it.id, layout);
+    if (mm && mm.itemId === it.id) positionMmbar();
   }
 
   function renderItem(it) {
     const el = makeEl(it);
     els.set(it.id, el);
-    if (it.type === 'image') {
+    if (it.type === 'mindmap') {
+      mapsLayer.appendChild(el);
+      refreshMap(it);
+    } else if (it.type === 'image') {
       imgLayer.appendChild(el);
     } else if (it.type === 'stroke') {
       // 螢光筆放在筆跡下面，寫在上面的字才不會被蓋住
@@ -219,6 +257,7 @@ export function createEditor(viewport, hooks = {}) {
     svg.replaceChildren();
     textLayer.replaceChildren();
     imgLayer.replaceChildren();
+    mapsLayer.replaceChildren();
     els.clear();
     for (const it of items) renderItem(it);
     updateSurfaceSize();
@@ -259,22 +298,28 @@ export function createEditor(viewport, hooks = {}) {
   }
 
   function undo() {
+    commitEdit();
     if (!undoStack.length) return;
     blurText();
     redoStack.push(snapshot());
     items = JSON.parse(undoStack.pop());
     selection.clear();
+    mm = null;
+    mmbar.hidden = true;
     renderAll();
     commit();
     emitHistory();
   }
 
   function redo() {
+    commitEdit();
     if (!redoStack.length) return;
     blurText();
     undoStack.push(snapshot());
     items = JSON.parse(redoStack.pop());
     selection.clear();
+    mm = null;
+    mmbar.hidden = true;
     renderAll();
     commit();
     emitHistory();
@@ -284,6 +329,11 @@ export function createEditor(viewport, hooks = {}) {
   function itemBounds(it) {
     if (it.type === 'stroke') return strokeBounds(it);
     if (it.type === 'image') return { x: it.x, y: it.y, w: it.w, h: it.h };
+    if (it.type === 'mindmap') {
+      const l = mapLayouts.get(it.id);
+      const b = l ? l.bounds : { x: 0, y: 0, w: 160, h: 48 };
+      return { x: it.x + b.x, y: it.y + b.y, w: b.w, h: b.h };
+    }
     const el = els.get(it.id);
     return { x: it.x, y: it.y, w: it.w, h: el ? el.offsetHeight : 40 };
   }
@@ -309,6 +359,7 @@ export function createEditor(viewport, hooks = {}) {
     Object.assign(selBox.style, { left: b.x - pad + 'px', top: b.y - pad + 'px', width: b.w + pad * 2 + 'px', height: b.h + pad * 2 + 'px', transform: '' });
     selbar.hidden = false;
     selbar.querySelector('[data-act="ink2text"]').hidden = !selectedPenStrokes().length;
+    selbar.querySelector('[data-act="text2map"]').hidden = !(only && only.type === 'text');
     positionSelbar();
     emit('onSelection', selection.size);
   }
@@ -371,7 +422,9 @@ export function createEditor(viewport, hooks = {}) {
     for (const it of items.filter((x) => selection.has(x.id))) {
       const copy = it.type === 'stroke'
         ? { ...translateStroke(it, 24, 24), id: newId('s_') }
-        : { ...it, id: newId(it.type === 'image' ? 'i_' : 't_'), x: it.x + 24, y: it.y + 24 };
+        : it.type === 'mindmap'
+          ? { ...it, id: newId('m_'), x: it.x + 24, y: it.y + 24, root: cloneWithNewIds(it.root) }
+          : { ...it, id: newId(it.type === 'image' ? 'i_' : 't_'), x: it.x + 24, y: it.y + 24 };
       copies.push(copy);
     }
     for (const c of copies) { items.push(c); renderItem(c); }
@@ -403,6 +456,7 @@ export function createEditor(viewport, hooks = {}) {
       const el = makeEl(it);
       old.replaceWith(el);
       els.set(id, el);
+      if (it.type === 'mindmap') refreshMap(it);
     }
     renderSelection();
     pushUndo(before);
@@ -649,7 +703,8 @@ export function createEditor(viewport, hooks = {}) {
   }
 
   viewport.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('.selbar')) return;
+    if (e.target.closest('.selbar, .mmbar')) return;
+    if (mm) clearNode();
     const onText = e.target.closest('.textbox, .page-head');
     if (e.pointerType === 'pen' && !prefs.penOnly) {
       // 第一次用 Apple Pencil 寫字：之後手指只負責捲動
@@ -843,8 +898,295 @@ export function createEditor(viewport, hooks = {}) {
   });
   window.addEventListener('resize', () => applyView());
 
+  // ---------- 心智圖 ----------
+  function mapItem() {
+    return mm ? items.find((x) => x.id === mm.itemId) : null;
+  }
+
+  function nodeEl() {
+    const el = mm && els.get(mm.itemId);
+    return el ? el.querySelector(`:scope > .mm-node[data-node="${mm.nodeId}"]`) : null;
+  }
+
+  function selectNode(itemId, nodeId) {
+    commitEdit();
+    const prev = mm && mm.itemId !== itemId ? items.find((x) => x.id === mm.itemId) : null;
+    mm = { itemId, nodeId, editing: null };
+    if (selection.size) setSelection([]);
+    if (prev) refreshMap(prev);
+    refreshMap(mapItem());
+    mmbar.hidden = false;
+    positionMmbar();
+  }
+
+  function clearNode() {
+    if (!mm) return;
+    commitEdit();
+    const it = mapItem();
+    mm = null;
+    mmbar.hidden = true;
+    if (it) refreshMap(it);
+  }
+
+  function positionMmbar() {
+    if (!mm || mmbar.hidden) return;
+    const it = mapItem();
+    const l = it && mapLayouts.get(it.id);
+    const b = l && l.nodes.find((n) => n.id === mm.nodeId);
+    if (!b) { mmbar.hidden = true; return; }
+    const node = findNode(it.root, mm.nodeId);
+    const isRoot = node === it.root;
+    mmbar.querySelector('[data-mm="fold"]').textContent = node.collapsed ? '展開' : '收合';
+    mmbar.querySelector('[data-mm="fold"]').disabled = !node.children.length || isRoot;
+    mmbar.querySelector('[data-mm="up"]').disabled = isRoot;
+    mmbar.querySelector('[data-mm="down"]').disabled = isRoot;
+    mmbar.querySelector('[data-mm="delete"]').textContent = isRoot ? '刪除心智圖' : '刪除';
+    // 固定在畫面下方中間：不會蓋住旁邊的節點，iPad 上也好按
+  }
+
+  function mmOp(op) {
+    const it = mapItem();
+    if (!it) return;
+    if (op === 'edit') { startEdit(); return; }
+    commitEdit();
+    const before = snapshot();
+    const root = it.root;
+    let next = mm.nodeId;
+    if (op === 'child' || op === 'sibling') {
+      next = op === 'child' ? addChild(root, mm.nodeId, '新主題') : addSibling(root, mm.nodeId, '新主題');
+      mm.nodeId = next;
+      refreshMap(it);
+      // 新節點直接進入編輯；打完字才算一步復原
+      startEdit({ before, isNew: true });
+      return;
+    }
+    if (op === 'delete') {
+      if (root.id === mm.nodeId) {
+        mm = null;
+        mmbar.hidden = true;
+        removeItem(it.id);
+        pushUndo(before);
+        commit();
+        return;
+      }
+      next = removeNode(root, mm.nodeId);
+    } else if (op === 'up' || op === 'down') {
+      moveSibling(root, mm.nodeId, op === 'up' ? -1 : 1);
+    } else if (op === 'fold') {
+      const n = findNode(root, mm.nodeId);
+      if (n.children.length) n.collapsed = !n.collapsed;
+    }
+    mm.nodeId = next;
+    refreshMap(it);
+    pushUndo(before);
+    commit();
+  }
+
+  function startEdit({ before = snapshot(), isNew = false } = {}) {
+    const el = nodeEl();
+    if (!el || mm.editing) return;
+    const it = mapItem();
+    const node = findNode(it.root, mm.nodeId);
+    const text = el.querySelector('.mm-text');
+    text.contentEditable = 'plaintext-only';
+    if (text.contentEditable !== 'plaintext-only') text.contentEditable = 'true';
+    mm.editing = { before, isNew, original: node.text, text };
+    text.focus({ preventScroll: true });
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  function commitEdit() {
+    if (!mm || !mm.editing) return;
+    const ed = mm.editing;
+    mm.editing = null;
+    ed.text.contentEditable = 'false';
+    const it = mapItem();
+    if (!it) return;
+    const node = findNode(it.root, mm.nodeId);
+    const value = ed.text.textContent.replace(/\s+$/g, '').replace(/^\s+/g, '');
+    if (node) {
+      if (value) node.text = value;
+      else if (ed.isNew) mm.nodeId = removeNode(it.root, node.id) || it.root.id;
+      else node.text = ed.original;
+    }
+    refreshMap(it);
+    pushUndo(ed.before);
+    commit();
+  }
+
+  mapsLayer.addEventListener('input', (e) => {
+    if (!mm || !mm.editing || e.target !== mm.editing.text) return;
+    const it = mapItem();
+    const node = findNode(it.root, mm.nodeId);
+    node.text = mm.editing.text.textContent;
+    refreshMap(it); // 邊打字邊重新排版
+  });
+
+  mapsLayer.addEventListener('keydown', (e) => {
+    if (!mm || !mm.editing || e.target !== mm.editing.text) return;
+    if (e.isComposing || e.keyCode === 229) return; // 中文輸入法選字中的 Enter 不算
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitEdit(); }
+    else if (e.key === 'Tab') { e.preventDefault(); commitEdit(); mmOp('child'); }
+    else if (e.key === 'Escape') { e.preventDefault(); commitEdit(); }
+    e.stopPropagation();
+  });
+
+  mapsLayer.addEventListener('focusout', (e) => {
+    if (mm && mm.editing && e.target === mm.editing.text) commitEdit();
+  });
+
+  // 點節點選取，再點一次編輯；拖曳中心主題可以移動整張心智圖
+  mapsLayer.addEventListener('pointerdown', (e) => {
+    const nEl = e.target.closest('.mm-node');
+    if (!nEl) return;
+    if (mm && mm.editing && e.target.closest('.mm-text') === mm.editing.text) { e.stopPropagation(); return; }
+    e.preventDefault();
+    e.stopPropagation();
+    blurText();
+    const mEl = nEl.closest('.mindmap');
+    const it = items.find((x) => x.id === mEl.dataset.id);
+    const nodeId = nEl.dataset.node;
+    const isRoot = it.root.id === nodeId;
+    const start = toPage(e.clientX, e.clientY);
+    const before = snapshot();
+    let moved = false;
+    let dx = 0;
+    let dy = 0;
+    try { nEl.setPointerCapture(e.pointerId); } catch { /* 合成事件 */ }
+    const onMove = (ev) => {
+      const p = toPage(ev.clientX, ev.clientY);
+      dx = p.x - start.x;
+      dy = p.y - start.y;
+      if (!moved && Math.hypot(dx, dy) * view.z < 5) return;
+      if (!isRoot) return;
+      moved = true;
+      mEl.style.transform = `translate(${dx}px, ${dy}px)`;
+      mmbar.hidden = true;
+    };
+    const onUp = () => {
+      nEl.removeEventListener('pointermove', onMove);
+      nEl.removeEventListener('pointerup', onUp);
+      nEl.removeEventListener('pointercancel', onUp);
+      if (moved) {
+        it.x = Math.round(it.x + dx);
+        it.y = Math.round(it.y + dy);
+        mEl.style.transform = '';
+        mEl.style.left = it.x + 'px';
+        mEl.style.top = it.y + 'px';
+        selectNode(it.id, nodeId);
+        pushUndo(before);
+        commit();
+      } else if (mm && mm.itemId === it.id && mm.nodeId === nodeId) {
+        startEdit();
+      } else {
+        selectNode(it.id, nodeId);
+      }
+    };
+    nEl.addEventListener('pointermove', onMove);
+    nEl.addEventListener('pointerup', onUp);
+    nEl.addEventListener('pointercancel', onUp);
+  });
+
+  mmbar.addEventListener('pointerdown', (e) => e.preventDefault()); // 按工具列時不要讓編輯中的文字失去焦點
+  mmbar.addEventListener('click', (e) => {
+    const op = e.target.closest('button')?.dataset.mm;
+    if (op) mmOp(op);
+  });
+
+  // 鍵盤操作（沒有在打字時）：回傳 true 代表處理掉了
+  function handleKey(e) {
+    if (!mm || mm.editing) return false;
+    const it = mapItem();
+    if (!it) return false;
+    const node = findNode(it.root, mm.nodeId);
+    const l = mapLayouts.get(it.id);
+    const box = l && l.nodes.find((n) => n.id === mm.nodeId);
+    const side = box ? box.side : 0;
+    const go = (id) => { if (id) selectNode(it.id, id); };
+    const parent = findParent(it.root, mm.nodeId);
+    const firstChildOnSide = (s) => {
+      if (node.collapsed) return null;
+      if (node !== it.root) return node.children[0]?.id;
+      const kid = l.nodes.find((n) => n.depth === 1 && n.side === s);
+      return kid && kid.id;
+    };
+    switch (e.key) {
+      case 'Tab': mmOp('child'); break;
+      case 'Enter': mmOp('sibling'); break;
+      case 'Delete': case 'Backspace': mmOp('delete'); break;
+      case 'F2': case ' ': mmOp('edit'); break;
+      case 'Escape': clearNode(); break;
+      case 'ArrowUp': case 'ArrowDown': {
+        if (e.altKey) { mmOp(e.key === 'ArrowUp' ? 'up' : 'down'); break; }
+        if (!parent) return true;
+        const sibs = parent.children;
+        const i = sibs.findIndex((c) => c.id === node.id) + (e.key === 'ArrowUp' ? -1 : 1);
+        if (sibs[i]) go(sibs[i].id);
+        break;
+      }
+      case 'ArrowRight':
+        go(side < 0 ? parent?.id : firstChildOnSide(1));
+        break;
+      case 'ArrowLeft':
+        go(side > 0 ? parent?.id : firstChildOnSide(-1));
+        break;
+      default: return false;
+    }
+    e.preventDefault();
+    return true;
+  }
+
+  function insertMindmap() {
+    if (!page) return;
+    blurText();
+    const before = snapshot();
+    const r = viewport.getBoundingClientRect();
+    const c = toPage(r.left + r.width * 0.38, r.top + r.height * 0.42);
+    let x = Math.max(24, c.x - 60);
+    let y = Math.max(150, c.y - 20);
+    // 看得到的地方已經有東西，就放到內容下面的空白處，免得被文字框蓋住
+    const area = { x: x - 40, y: y - 120, w: 560, h: 280 };
+    if (items.some((other) => rectsIntersect(itemBounds(other), area))) {
+      x = 220;
+      y = contentBottom() + 160;
+      view.y = Math.min(48, -(y - r.height * 0.4) * view.z);
+      view.x = Math.min(48, view.x);
+      applyView();
+    }
+    const it = defaultMindmap(x, y);
+    items.push(it);
+    renderItem(it);
+    selectNode(it.id, it.root.id);
+    startEdit({ before, isNew: false });
+    // 新建的心智圖：中心主題改完才算一步
+  }
+
+  // 把一個文字框照縮排轉成心智圖：第一行是中心主題
+  function textToMindmap() {
+    const only = selection.size === 1 ? items.find((x) => selection.has(x.id)) : null;
+    if (!only || only.type !== 'text') return false;
+    const lines = htmlToParagraphs(sanitizeHtml(only.html)).map((p) => p.runs.map((r) => r.text).join(''));
+    const root = outlineToTree(lines);
+    if (!root) return false;
+    const before = snapshot();
+    removeItem(only.id);
+    const it = { id: newId('m_'), type: 'mindmap', x: Math.round(only.x), y: Math.round(only.y), root };
+    items.push(it);
+    renderItem(it);
+    setSelection([]);
+    selectNode(it.id, root.id);
+    pushUndo(before);
+    commit();
+    return true;
+  }
+
   selbar.addEventListener('click', (e) => {
     const act = e.target.closest('button')?.dataset.act;
+    if (act === 'text2map' && !textToMindmap()) emit('onNotice', '這個文字框沒有內容可以轉成心智圖。');
     if (act === 'delete') deleteSelection();
     if (act === 'duplicate') duplicateSelection();
     if (act === 'ink2text') emit('onInkToText', JSON.parse(JSON.stringify(selectedPenStrokes())));
@@ -867,6 +1209,7 @@ export function createEditor(viewport, hooks = {}) {
 
   // ---------- 對外介面 ----------
   function load(p, content) {
+    clearNode(); // 先把還在編輯的節點存到原本那一頁
     blurText();
     cancelGesture();
     page = p;
@@ -874,6 +1217,9 @@ export function createEditor(viewport, hooks = {}) {
     undoStack = [];
     redoStack = [];
     selection.clear();
+    mm = null;
+    mmbar.hidden = true;
+    mapLayouts.clear();
     titleInput.value = page.title || '';
     dateEl.textContent = formatDate(page.createdAt);
     setBackground(page.background || 'ruled', false);
@@ -929,6 +1275,7 @@ export function createEditor(viewport, hooks = {}) {
   function setTool(name) {
     if (tool === name) return;
     blurText();
+    clearNode();
     tool = name;
     viewport.dataset.tool = name;
     viewport.classList.toggle('mode-draw', DRAW_TOOLS.has(name));
@@ -976,6 +1323,9 @@ export function createEditor(viewport, hooks = {}) {
     clearSelection: () => setSelection([]),
     applyInkToText,
     insertImages,
+    insertMindmap,
+    handleKey,
+    hasNodeSelection: () => !!mm,
     penStrokes: () => JSON.parse(JSON.stringify(items.filter((it) => it.type === 'stroke' && it.tool !== 'highlighter'))),
     setBusy(busy) { selbar.classList.toggle('busy', busy); selbar.querySelector('[data-act="ink2text"]').disabled = busy; },
   };

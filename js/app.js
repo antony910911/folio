@@ -78,6 +78,7 @@ app.innerHTML = `
       <div class="tool-group" id="tools" role="toolbar" aria-label="工具"></div>
       <div class="tool-opts" id="tool-opts"></div>
       <button type="button" class="icon-btn" id="insert" title="插入 PDF 或圖片" aria-label="插入 PDF 或圖片">${icons.insert}</button>
+      <button type="button" class="icon-btn" id="mindmap" title="新增心智圖" aria-label="新增心智圖">${icons.mindmap}</button>
       <div class="spacer"></div>
       <button type="button" class="icon-btn" id="undo" title="復原 (⌘Z)" aria-label="復原">${icons.undo}</button>
       <button type="button" class="icon-btn" id="redo" title="重做 (⇧⌘Z)" aria-label="重做">${icons.redo}</button>
@@ -154,6 +155,9 @@ const editor = createEditor(editorEl, {
   },
   onZoom(z) {
     $('zoom').textContent = Math.round(z * 100) + '%';
+  },
+  onNotice(msg) {
+    toast(msg);
   },
   onInkToText(strokes) {
     inkToText(strokes);
@@ -665,6 +669,12 @@ $('import-file').addEventListener('change', async (e) => {
 // ---------- 插入 PDF、圖片 ----------
 let importing = false;
 
+$('mindmap').addEventListener('click', () => {
+  if (!editor.page) { toast('請先新增一個頁面。'); return; }
+  if (prefs.tool !== 'select' && prefs.tool !== 'text') setTool('select');
+  editor.insertMindmap();
+});
+
 $('insert').addEventListener('click', () => {
   if (!editor.page) { toast('請先新增一個頁面。'); return; }
   $('insert-file').click();
@@ -950,6 +960,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !editor.isTyping()) { editor.clearSelection(); return; }
   const mod = e.metaKey || e.ctrlKey;
   if (editor.isTyping()) return;
+  if (!mod && editor.handleKey(e)) return;
   if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) editor.redo(); else editor.undo(); return; }
   if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); editor.redo(); return; }
   if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); editor.duplicateSelection(); return; }

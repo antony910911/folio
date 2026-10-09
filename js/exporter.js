@@ -8,6 +8,8 @@ import { pageDisplayTitle } from './model.js';
 import { sanitizeHtml, formatDate } from './editor.js';
 import { renderStrokes, canvasToBlob, measureTextHeight } from './inkrender.js';
 import { loadPptx, loadDocx } from './vendor.js';
+import { treeToOutline } from './mindmap.js';
+import { measureMindmap, branchColor } from './mindmap-view.js';
 
 const FONT = 'Microsoft JhengHei';
 const TEXT_COLOR = '1D2330';
@@ -32,6 +34,12 @@ async function buildBlocks(page, items, { highlighter, getAsset }) {
     const paragraphs = htmlToParagraphs(html);
     if (!paragraphs.some((p) => p.runs.some((r) => r.text.trim()))) continue;
     blocks.push({ kind: 'text', x: it.x, y: it.y, w: it.w, h: measureTextHeight(html, it.w), paragraphs });
+  }
+  for (const it of items) {
+    if (it.type !== 'mindmap') continue;
+    const layout = measureMindmap(it);
+    const b = layout.bounds;
+    blocks.push({ kind: 'mindmap', x: it.x + b.x, y: it.y + b.y, w: b.w, h: b.h, ox: it.x, oy: it.y, layout, root: it.root });
   }
   for (const it of items) {
     if (it.type !== 'image') continue;
@@ -87,6 +95,7 @@ export async function exportPptx(entries, title, getAsset) {
       for (const b of s.blocks.filter((x) => x.kind === 'ink')) {
         slide.addImage({ data: b.canvas.toDataURL('image/png'), x: b.sx, y: b.sy, w: b.sw, h: b.sh });
       }
+      for (const b of s.blocks.filter((x) => x.kind === 'mindmap')) addMindmapShapes(pptx, slide, b, scale, pt);
       for (const b of s.blocks) {
         if (b.kind === 'title' || b.kind === 'date') {
           const isTitle = b.kind === 'title';
@@ -109,6 +118,39 @@ export async function exportPptx(entries, title, getAsset) {
   return new Blob([blob], { type: MIME.pptx });
 }
 
+// 心智圖用 PowerPoint 的圖形畫：連線是直線，節點是圓角矩形，文字可以直接改
+function addMindmapShapes(pptx, slide, b, scale, pt) {
+  const X = (px) => b.sx + (b.ox + px - b.x) * scale;
+  const Y = (px) => b.sy + (b.oy + px - b.y) * scale;
+  const hex = (c) => c.replace('#', '').toUpperCase();
+  for (const e of b.layout.edges) {
+    const x1 = X(e.x1), y1 = Y(e.y1), x2 = X(e.x2), y2 = Y(e.y2);
+    slide.addShape(pptx.ShapeType.line, {
+      x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.max(0.001, Math.abs(x2 - x1)), h: Math.max(0.001, Math.abs(y2 - y1)),
+      flipV: (x2 - x1) * (y2 - y1) < 0,
+      line: { color: hex(branchColor(e.branch)), width: e.depth === 1 ? 2 : 1.25 },
+    });
+  }
+  for (const n of b.layout.nodes) {
+    const color = hex(branchColor(n.branch));
+    const fill = n.depth === 0 ? color : n.depth === 1 ? tint(color, 0.13) : 'FFFFFF';
+    slide.addText(n.node.text, {
+      x: X(n.x), y: Y(n.y), w: n.w * scale, h: n.h * scale,
+      shape: pptx.ShapeType.roundRect, rectRadius: 0.08,
+      fill: { color: fill }, line: { color: n.depth >= 2 ? tint(color, 0.45) : color, width: 1 },
+      fontFace: FONT, fontSize: pt(n.depth === 0 ? 19 : n.depth === 1 ? 16 : 15), bold: n.depth <= 1,
+      color: n.depth === 0 ? 'FFFFFF' : TEXT_COLOR, align: 'center', valign: 'middle', margin: 1,
+    });
+  }
+}
+
+// 把顏色和白色混合（amount 是原色的比例）
+function tint(hex, amount) {
+  const n = parseInt(hex, 16);
+  const mix = (v) => Math.round(v * amount + 255 * (1 - amount)).toString(16).padStart(2, '0');
+  return (mix((n >> 16) & 255) + mix((n >> 8) & 255) + mix(n & 255)).toUpperCase();
+}
+
 // ---------- Word ----------
 export async function exportDocx(entries, title, getAsset) {
   const d = await loadDocx();
@@ -129,6 +171,13 @@ export async function exportDocx(entries, title, getAsset) {
           }));
           if (p.list === 'ol') runs.unshift(new d.TextRun(`${p.index}. `));
           children.push(new d.Paragraph({ children: runs, bullet: p.list === 'ul' ? { level: 0 } : undefined }));
+        }
+        children.push(new d.Paragraph({ children: [] }));
+      } else if (b.kind === 'mindmap') {
+        // Word 裡用大綱：中心主題是粗體，分支是多層項目符號
+        for (const row of treeToOutline(b.root)) {
+          if (row.depth === 0) children.push(new d.Paragraph({ children: [new d.TextRun({ text: row.text, bold: true, size: 26 })] }));
+          else children.push(new d.Paragraph({ children: [new d.TextRun(row.text)], bullet: { level: Math.min(8, row.depth - 1) } }));
         }
         children.push(new d.Paragraph({ children: [] }));
       } else if (b.kind === 'ink' || b.kind === 'image') {

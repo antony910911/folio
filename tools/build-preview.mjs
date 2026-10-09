@@ -6,14 +6,17 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const ORDER = ['icons', 'ink', 'model', 'layout', 'store', 'editor', 'inkrender', 'vendor', 'recognize', 'exporter', 'importer', 'app']; // 被依賴的在前面
+const ORDER = ['icons', 'ink', 'model', 'layout', 'mindmap', 'store', 'mindmap-view', 'editor', 'inkrender', 'vendor', 'recognize', 'exporter', 'importer', 'app']; // 被依賴的在前面
+
+const ident = (name) => '__' + name.replace(/[^\w]/g, '_');
 
 function bundleModule(name) {
   let src = readFileSync(join(root, 'js', name + '.js'), 'utf8');
-  src = src.replace(/import\s+([\s\S]*?)\s+from\s+'\.\/(\w+)\.js';/g, (_, what, mod) => {
+  src = src.replace(/import\s+([\s\S]*?)\s+from\s+'\.\/([\w-]+)\.js';/g, (_, what, mod) => {
     if (!ORDER.includes(mod)) throw new Error(`未知模組 ${mod}`);
+    if (ORDER.indexOf(mod) > ORDER.indexOf(name)) throw new Error(`${name}.js 用到後面才載入的 ${mod}.js，請調整 ORDER`);
     const star = what.match(/^\*\s+as\s+(\w+)$/);
-    return star ? `const ${star[1]} = __${mod};` : `const ${what} = __${mod};`;
+    return star ? `const ${star[1]} = ${ident(mod)};` : `const ${what} = ${ident(mod)};`;
   });
   if (/\bimport\s/.test(src.replace(/\/\/.*$/gm, ''))) throw new Error(`${name}.js 有無法處理的 import`);
   const names = [];
@@ -23,7 +26,7 @@ function bundleModule(name) {
   });
   if (/^\s*export\s/m.test(src)) throw new Error(`${name}.js 有無法處理的 export`);
   const exportsObj = names.map((n) => `get ${n}() { return ${n}; }`).join(', ');
-  return `const __${name} = (() => {\n${src}\nreturn { ${exportsObj} };\n})();`;
+  return `const ${ident(name)} = (() => {\n${src}\nreturn { ${exportsObj} };\n})();`;
 }
 
 const css = readFileSync(join(root, 'css', 'app.css'), 'utf8');
