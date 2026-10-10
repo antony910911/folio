@@ -851,3 +851,35 @@ button.side-foot:hover { color: var(--fg); background: color-mix(in srgb, var(--
 .dlg-more .dlg-input { margin-bottom: 0; }
 .dlg-actions .spacer { flex: 1; }
 button.danger-text { color: var(--danger); }
+
+/* ---------- 勾選清單（像 iPhone 備忘錄） ---------- */
+.tb-body ul, .tb-body ol { margin: 0; padding-left: 1.4em; }
+.tb-body ul.checklist { list-style: none; padding-left: 0; }
+.tb-body ul.checklist ul.checklist { padding-left: 24px; }
+.tb-body ul.checklist > li {
+  position: relative;
+  padding-left: 30px;
+  min-height: 1.6em;
+}
+.tb-body ul.checklist > li::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  border: 1.5px solid #a9b1bf;
+  background: #ffffff;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+.tb-body ul.checklist > li.done::before {
+  border-color: #d98b2b;
+  background: #d98b2b url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5.5 10.5l3 3 6-7' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 15px no-repeat;
+}
+/* 打勾的項目變灰、加刪除線；子清單不受影響 */
+.tb-body ul.checklist > li.done { color: #8a92a0; text-decoration: line-through; text-decoration-color: #b4bac5; }
+.tb-body ul.checklist > li.done > ul { color: #1d2330; text-decoration: none; }
+/* 畫筆模式下文字框不能點，但圓圈要看起來可以點 */
+.mode-draw .tb-body ul.checklist > li::before { cursor: pointer; }

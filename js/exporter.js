@@ -3,7 +3,7 @@
 // Word：依閱讀順序由上到下排，文字變成段落，手寫變成插入的圖片（螢光筆不放，因為 Word 的文字位置會變）。
 
 import { strokeBounds } from './ink.js';
-import { clusterBoxes, htmlToParagraphs, planSlides, readingOrder, fitWidth } from './layout.js';
+import { clusterBoxes, htmlToParagraphs, planSlides, readingOrder, fitWidth, listPrefix } from './layout.js';
 import { pageDisplayTitle } from './model.js';
 import { sanitizeHtml, formatDate } from './editor.js';
 import { renderStrokes, canvasToBlob, measureTextHeight } from './inkrender.js';
@@ -60,14 +60,16 @@ async function buildBlocks(page, items, { highlighter, getAsset }) {
 function pptxRuns(paragraphs) {
   const out = [];
   paragraphs.forEach((p, pi) => {
-    const prefix = p.list === 'ul' ? '• ' : p.list === 'ol' ? `${p.index}. ` : '';
+    // 縮排用全形空白，PowerPoint 裡看起來最穩定
+    const prefix = '\u3000'.repeat(p.depth || 0) + listPrefix(p);
     const runs = p.runs.length ? p.runs : [{ text: ' ' }];
     runs.forEach((r, ri) => {
       const options = { breakLine: ri === runs.length - 1 && pi < paragraphs.length - 1 };
       if (r.b) options.bold = true;
       if (r.i) options.italic = true;
       if (r.u) options.underline = { style: 'sng' };
-      if (r.s) options.strike = 'sngStrike';
+      if (r.s || p.checked) options.strike = 'sngStrike';
+      if (p.checked) options.color = '8A92A0';
       out.push({ text: (ri === 0 ? prefix : '') + r.text, options });
     });
   });
@@ -167,10 +169,16 @@ export async function exportDocx(entries, title, getAsset) {
       if (b.kind === 'text') {
         for (const p of b.paragraphs) {
           const runs = p.runs.map((r) => new d.TextRun({
-            text: r.text, bold: r.b, italics: r.i, strike: r.s, underline: r.u ? {} : undefined,
+            text: r.text, bold: r.b, italics: r.i, strike: r.s || p.checked, underline: r.u ? {} : undefined,
+            color: p.checked ? '8A92A0' : undefined,
           }));
           if (p.list === 'ol') runs.unshift(new d.TextRun(`${p.index}. `));
-          children.push(new d.Paragraph({ children: runs, bullet: p.list === 'ul' ? { level: 0 } : undefined }));
+          if (p.list === 'check') runs.unshift(new d.TextRun({ text: p.checked ? '☑ ' : '☐ ', color: p.checked ? 'D98B2B' : undefined }));
+          children.push(new d.Paragraph({
+            children: runs,
+            bullet: p.list === 'ul' ? { level: Math.min(8, p.depth || 0) } : undefined,
+            indent: p.list && p.list !== 'ul' && p.depth ? { left: 360 * p.depth } : undefined,
+          }));
         }
         children.push(new d.Paragraph({ children: [] }));
       } else if (b.kind === 'mindmap') {

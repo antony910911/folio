@@ -7,7 +7,7 @@ import {
   rectFromPoints, rectsIntersect, pointInRect, rectContains, compactPoints, translateStroke,
 } from './ink.js';
 import { newId } from './model.js';
-import { textToHtml, htmlToParagraphs } from './layout.js';
+import { textToHtml, htmlToParagraphs, toggleChecklistHtml } from './layout.js';
 import {
   defaultMindmap, findNode, findParent, addChild, addSibling, removeNode, moveSibling, outlineToTree, cloneWithNewIds,
 } from './mindmap.js';
@@ -36,7 +36,11 @@ export function sanitizeHtml(html) {
         if (!ALLOWED_TAGS.has(child.tagName)) {
           child.replaceWith(...child.childNodes);
         } else {
+          // 只留勾選清單需要的 class：<ul class="checklist">、<li class="done">
+          const keep = (child.tagName === 'UL' && child.classList.contains('checklist')) ? 'checklist'
+            : (child.tagName === 'LI' && child.classList.contains('done')) ? 'done' : '';
           for (const a of [...child.attributes]) child.removeAttribute(a.name);
+          if (keep) child.className = keep;
         }
       } else if (child.nodeType !== Node.TEXT_NODE) {
         child.remove();
@@ -105,6 +109,7 @@ export function createEditor(viewport, hooks = {}) {
     highlighter: { color: '#f5d33b', size: 18 },
     eraserSize: 12,
     penOnly: false,
+    checkedToBottom: false,
   };
   let view = { x: 0, y: 0, z: 1 };
   const views = new Map(); // 每一頁記住上次看的位置
@@ -470,15 +475,137 @@ export function createEditor(viewport, hooks = {}) {
     if (a && viewport.contains(a) && a.classList.contains('tb-body')) a.blur();
   }
 
-  function createTextAt(x, y) {
-    const it = { id: newId('t_'), type: 'text', x: Math.round(x - 8), y: Math.round(y - 22), w: 320, html: '' };
+  function createTextAt(x, y, html = '') {
+    const it = { id: newId('t_'), type: 'text', x: Math.round(x - 8), y: Math.round(y - 22), w: 320, html };
     items.push(it);
     const el = renderItem(it);
     el.dataset.fresh = '1';
     const body = el.querySelector('.tb-body');
     body.focus();
+    const li = body.querySelector('li');
+    if (li) placeCaret(li, true);
     setSelection([]);
+    return it;
   }
+
+  function placeCaret(node, atEnd) {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    range.collapse(!atEnd);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  // ---------- 勾選清單 ----------
+  // 點清單項目左邊的圓圈打勾。圓圈畫在 li 的左側留白裡（CSS ::before），所以用位置判斷
+  const CHECK_ZONE = 30; // 頁面上的 px
+  function checkboxAt(cx, cy) {
+    for (const li of textLayer.querySelectorAll('ul.checklist > li')) {
+      const r = li.getBoundingClientRect();
+      const lineH = 26 * view.z;
+      if (cx >= r.left && cx <= r.left + CHECK_ZONE * view.z && cy >= r.top && cy <= Math.min(r.bottom, r.top + lineH)) return li;
+    }
+    return null;
+  }
+
+  function toggleCheck(li) {
+    const box = li.closest('.textbox');
+    const it = box && items.find((x) => x.id === box.dataset.id);
+    if (!it) return;
+    const body = box.querySelector('.tb-body');
+    const editing = document.activeElement === body;
+    const before = snapshot();
+    const done = li.classList.toggle('done');
+    if (prefs.checkedToBottom) {
+      const list = li.parentElement;
+      if (done) list.appendChild(li);
+      else {
+        const firstDone = [...list.children].find((x) => x !== li && x.classList.contains('done'));
+        list.insertBefore(li, firstDone || null);
+      }
+    }
+    it.html = body.innerHTML;
+    if (!editing) pushUndo(before); // 編輯中的話，離開文字框時會一起記一步復原
+    commit();
+  }
+
+  // 工具列的「清單」按鈕：
+  // 正在打字 → 游標所在的幾行變成勾選清單（再按一次變回一般文字）
+  // 選取了一個文字框 → 整個文字框每一行變成一項
+  // 其他情況 → 在畫面中間新增一個空白清單
+  function toggleChecklist() {
+    const body = document.activeElement && document.activeElement.closest && document.activeElement.closest('.tb-body');
+    if (body && textLayer.contains(body)) {
+      const sel = window.getSelection();
+      const anchor = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement);
+      const list = anchor && anchor.closest('ul, ol');
+      if (list && body.contains(list) && list.tagName === 'UL' && !list.classList.contains('checklist')) {
+        list.classList.add('checklist');
+      } else {
+        document.execCommand('insertUnorderedList');
+        const a2 = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement);
+        const ul = a2 && a2.closest('ul');
+        if (ul && body.contains(ul)) ul.classList.add('checklist');
+      }
+      body.dispatchEvent(new Event('input', { bubbles: true }));
+      return 'line';
+    }
+    const only = selection.size === 1 ? items.find((x) => selection.has(x.id)) : null;
+    if (only && only.type === 'text') {
+      const before = snapshot();
+      only.html = toggleChecklistHtml(htmlToParagraphs(sanitizeHtml(only.html)));
+      const old = els.get(only.id);
+      const el = makeEl(only);
+      old.replaceWith(el);
+      els.set(only.id, el);
+      renderSelection();
+      pushUndo(before);
+      commit();
+      return 'box';
+    }
+    if (!page) return null;
+    const r = viewport.getBoundingClientRect();
+    const c = toPage(r.left + r.width * 0.35, r.top + r.height * 0.35);
+    let x = Math.max(40, c.x);
+    let y = Math.max(160, c.y);
+    // 看得到的地方已經有東西，就放到內容下面，免得疊在別的字上面
+    if (items.some((other) => rectsIntersect(itemBounds(other), { x: x - 16, y: y - 40, w: 360, h: 160 }))) {
+      x = 72;
+      y = contentBottom() + 56;
+      view.y = Math.min(48, -(y - r.height * 0.35) * view.z);
+      view.x = Math.min(48, Math.max(view.x, -(x - 40) * view.z));
+      applyView();
+    }
+    createTextAt(x, y, '<ul class="checklist"><li><br></li></ul>');
+    return 'new';
+  }
+
+  // 清單裡的 Enter、Tab
+  textLayer.addEventListener('keydown', (e) => {
+    const body = e.target.closest && e.target.closest('.tb-body');
+    if (!body || e.isComposing || e.keyCode === 229) return;
+    const sel = window.getSelection();
+    const node = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement);
+    const li = node && node.closest('ul.checklist > li');
+    if (!li || !body.contains(li)) return;
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      document.execCommand(e.shiftKey ? 'outdent' : 'indent');
+      // 縮排產生的子清單也要是勾選清單
+      for (const ul of body.querySelectorAll('ul.checklist ul:not(.checklist)')) ul.classList.add('checklist');
+      body.dispatchEvent(new Event('input', { bubbles: true }));
+    } else if (e.key === 'Enter' && !e.shiftKey) {
+      // 交給瀏覽器分出新的一項（空白項目按 Enter 會結束清單），之後把新項目的打勾狀態清掉
+      setTimeout(() => {
+        const n2 = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement);
+        const cur = n2 && n2.closest('li');
+        if (cur && !cur.textContent.trim()) cur.classList.remove('done');
+        for (const ul of body.querySelectorAll('ul.checklist ul:not(.checklist)')) ul.classList.add('checklist');
+        body.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    }
+  });
 
   // 文字框編輯：focus 時記下內容，離開時有改才加入復原紀錄
   let editBefore = null;
@@ -535,6 +662,13 @@ export function createEditor(viewport, hooks = {}) {
 
   // 拖曳文字框上方的橫條移動；右邊的把手調整寬度
   textLayer.addEventListener('pointerdown', (e) => {
+    const li = checkboxAt(e.clientX, e.clientY);
+    if (li) {
+      e.preventDefault(); // 不要把游標移進去
+      e.stopPropagation();
+      toggleCheck(li);
+      return;
+    }
     const handle = e.target.closest('.tb-handle, .tb-resize');
     if (!handle) return;
     e.preventDefault();
@@ -726,6 +860,16 @@ export function createEditor(viewport, hooks = {}) {
     // 擋掉觸控後補發的滑鼠事件，不然剛建立的文字框會馬上失去焦點
     e.preventDefault();
 
+    // 用筆或手指點勾選清單的圓圈：在任何工具下都能打勾（點一下才算，拖曳照常畫線或捲動）
+    if (DRAW_TOOLS.has(tool) || tool === 'hand') {
+      const li = checkboxAt(e.clientX, e.clientY);
+      if (li) {
+        try { viewport.setPointerCapture(e.pointerId); } catch { /* 合成事件 */ }
+        gesture = { kind: 'checkbox', id: e.pointerId, li, start: { cx: e.clientX, cy: e.clientY, view: { ...view } }, pointerType: e.pointerType };
+        return;
+      }
+    }
+
     const fingerPans = e.pointerType === 'touch' && prefs.penOnly;
     const wantsPan = tool === 'hand' || spaceDown || e.button === 1 || (fingerPans && DRAW_TOOLS.has(tool));
     blurText();
@@ -798,6 +942,12 @@ export function createEditor(viewport, hooks = {}) {
         marquee.hidden = false;
         Object.assign(marquee.style, { left: r.x + 'px', top: r.y + 'px', width: r.w + 'px', height: r.h + 'px' });
       }
+    } else if (g.kind === 'checkbox') {
+      if (Math.hypot(e.clientX - g.start.cx, e.clientY - g.start.cy) > 8) {
+        // 不是點一下：手指就改成捲動，筆就忽略（避免在圓圈上誤畫）
+        gesture = e.pointerType === 'touch' || tool === 'hand' ? { kind: 'pan', id: g.id, start: g.start } : { kind: 'ignore', id: g.id };
+        if (gesture.kind === 'pan') viewport.classList.add('panning');
+      }
     } else if (g.kind === 'tap-or-pan') {
       if (Math.hypot(e.clientX - g.start.cx, e.clientY - g.start.cy) > 8 && g.canPan !== false) {
         gesture = { kind: 'pan', id: g.id, start: g.start };
@@ -823,7 +973,9 @@ export function createEditor(viewport, hooks = {}) {
       cancelGesture(g);
       return;
     }
-    if (g.kind === 'stroke') {
+    if (g.kind === 'checkbox') {
+      toggleCheck(g.li);
+    } else if (g.kind === 'stroke') {
       endStroke(g);
     } else if (g.kind === 'erase') {
       renderSelection();
@@ -1170,7 +1322,9 @@ export function createEditor(viewport, hooks = {}) {
   function textToMindmap() {
     const only = selection.size === 1 ? items.find((x) => selection.has(x.id)) : null;
     if (!only || only.type !== 'text') return false;
-    const lines = htmlToParagraphs(sanitizeHtml(only.html)).map((p) => p.runs.map((r) => r.text).join(''));
+    // 清單的縮排層級也算進去（第一行是中心主題，清單項目往下一層）
+    const paras = htmlToParagraphs(sanitizeHtml(only.html));
+    const lines = paras.map((p, i) => (i > 0 && p.list ? '  '.repeat(p.depth + 1) : '') + p.runs.map((r) => r.text).join(''));
     const root = outlineToTree(lines);
     if (!root) return false;
     const before = snapshot();
@@ -1325,6 +1479,7 @@ export function createEditor(viewport, hooks = {}) {
     applyInkToText,
     insertImages,
     insertMindmap,
+    toggleChecklist,
     handleKey,
     // 同步用：正在寫字、拖曳或打字時不要套用遠端變更
     isBusy: () => !!gesture || !!pinch || !!(mm && mm.editing) || !!(document.activeElement && document.activeElement.closest && document.activeElement.closest('.tb-body')),

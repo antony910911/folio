@@ -17,5 +17,6 @@ export const icons = {
   book: wrap('<path d="M5 4.5h11a2 2 0 012 2v13H7a2 2 0 01-2-2z"/><path d="M5 17.5a2 2 0 012-2h11"/>'),
   check: wrap('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
   mindmap: wrap('<rect x="9" y="9.5" width="6" height="5" rx="1.5"/><rect x="2.5" y="3.5" width="5" height="4" rx="1.2"/><rect x="16.5" y="3.5" width="5" height="4" rx="1.2"/><rect x="16.5" y="16.5" width="5" height="4" rx="1.2"/><path d="M9 11c-2 0-2-5.5-3.5-5.5M15 11c2 0 2-5.5 3.5-5.5M15 13c2 0 2 5.5 3.5 5.5"/>'),
+  checklist: wrap('<circle cx="6" cy="7" r="2.6"/><path d="M4.9 7l.9.9 1.6-1.8"/><circle cx="6" cy="16.5" r="2.6"/><path d="M11 7h9M11 16.5h9"/>'),
   insert: wrap('<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M20.5 16l-5-5L7 19"/>'),
 };

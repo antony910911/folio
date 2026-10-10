@@ -93,3 +93,34 @@ test('圖片縮到指定寬度', () => {
   assert.deepEqual(fitWidth(1200, 300, 600), { w: 600, h: 150 });
   assert.deepEqual(fitWidth(100, 50, 600), { w: 100, h: 50 });
 });
+
+test('勾選清單：打勾狀態和縮排層級', async () => {
+  const { htmlToParagraphs, paragraphsToText } = await import('../js/layout.js');
+  const p = htmlToParagraphs('<div>購物</div><ul class="checklist"><li>牛奶</li><li class="done">雞蛋<ul class="checklist"><li class="done">有機的</li></ul></li><li>麵包</li></ul>');
+  assert.deepEqual(p.map((x) => [x.list, x.checked, x.depth, x.runs.map((r) => r.text).join('')]), [
+    [null, false, 0, '購物'], ['check', false, 0, '牛奶'], ['check', true, 0, '雞蛋'], ['check', true, 1, '有機的'], ['check', false, 0, '麵包'],
+  ]);
+  assert.equal(paragraphsToText(p), '購物\n☐ 牛奶\n☑ 雞蛋\n  ☑ 有機的\n☐ 麵包');
+});
+
+test('一般項目清單不會被當成勾選清單', async () => {
+  const { htmlToParagraphs } = await import('../js/layout.js');
+  const p = htmlToParagraphs('<ul><li class="done">a</li></ul>');
+  assert.equal(p[0].list, 'ul');
+  assert.equal(p[0].checked, false);
+});
+
+test('整個文字框轉成勾選清單，再轉回來', async () => {
+  const { htmlToParagraphs, toggleChecklistHtml } = await import('../js/layout.js');
+  const html = toggleChecklistHtml(htmlToParagraphs('<b>牛奶</b><div>雞蛋 &amp; 麵包</div><div><br></div>'));
+  assert.equal(html, '<ul class="checklist"><li><b>牛奶</b></li><li>雞蛋 &amp; 麵包</li></ul>');
+  const back = toggleChecklistHtml(htmlToParagraphs(html));
+  assert.equal(back, '<div><b>牛奶</b></div><div>雞蛋 &amp; 麵包</div>');
+  assert.equal(toggleChecklistHtml([]), '<ul class="checklist"><li><br></li></ul>');
+});
+
+test('打勾的項目轉換時保留狀態', async () => {
+  const { htmlToParagraphs, toggleChecklistHtml } = await import('../js/layout.js');
+  const html = toggleChecklistHtml(htmlToParagraphs('<ul><li>a</li></ul><ul class="checklist"><li class="done">b</li></ul>'));
+  assert.equal(html, '<ul class="checklist"><li>a</li><li class="done">b</li></ul>');
+});

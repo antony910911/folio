@@ -42,6 +42,7 @@ let prefs = {
   highlighter: { color: HL_COLORS[0], size: HL_SIZES[1] },
   eraserSize: 12,
   penOnly: false,
+  checkedToBottom: false,
   sidebar: true,
   last: {},
 };
@@ -80,6 +81,7 @@ app.innerHTML = `
       <div class="tool-opts" id="tool-opts"></div>
       <button type="button" class="icon-btn" id="insert" title="插入 PDF 或圖片" aria-label="插入 PDF 或圖片">${icons.insert}</button>
       <button type="button" class="icon-btn" id="mindmap" title="新增心智圖" aria-label="新增心智圖">${icons.mindmap}</button>
+      <button type="button" class="icon-btn" id="checklist" title="勾選清單" aria-label="勾選清單">${icons.checklist}</button>
       <div class="spacer"></div>
       <button type="button" class="icon-btn" id="undo" title="復原 (⌘Z)" aria-label="復原">${icons.undo}</button>
       <button type="button" class="icon-btn" id="redo" title="重做 (⇧⌘Z)" aria-label="重做">${icons.redo}</button>
@@ -176,7 +178,7 @@ const editor = createEditor(editorEl, {
     toast('偵測到 Apple Pencil：手指改成捲動頁面，只有筆會寫字。可以在「⋯」裡關掉。');
   },
 });
-editor.setPrefs({ pen: prefs.pen, highlighter: prefs.highlighter, eraserSize: prefs.eraserSize, penOnly: prefs.penOnly });
+editor.setPrefs({ pen: prefs.pen, highlighter: prefs.highlighter, eraserSize: prefs.eraserSize, penOnly: prefs.penOnly, checkedToBottom: prefs.checkedToBottom });
 
 window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
 window.addEventListener('pagehide', flush);
@@ -237,6 +239,7 @@ $('more').addEventListener('click', (e) => {
     { row: BACKGROUNDS.map((bg) => ({ label: BG_LABELS[bg], on: page && page.background === bg, action: () => editor.setBackground(bg), disabled: !page })) },
     { sep: true },
     { label: '只用 Apple Pencil 寫字', hint: '手指只負責捲動', check: prefs.penOnly, action: togglePenOnly },
+    { label: '打勾的項目移到最下面', hint: '勾選清單', check: prefs.checkedToBottom, action: toggleCheckedToBottom },
     { label: '放大', action: () => editor.zoomBy(1.25) },
     { label: '縮小', action: () => editor.zoomBy(0.8) },
     { sep: true },
@@ -833,6 +836,23 @@ async function reloadFromStore() {
 
 // ---------- 插入 PDF、圖片 ----------
 let importing = false;
+
+// 按清單按鈕時不要讓正在打字的文字框失去焦點（要把游標那幾行變成清單）
+$('checklist').addEventListener('pointerdown', (e) => e.preventDefault());
+$('checklist').addEventListener('click', () => {
+  if (!editor.page) { toast('請先新增一個頁面。'); return; }
+  const typing = document.activeElement && document.activeElement.closest && document.activeElement.closest('.tb-body');
+  // 用畫筆時新增的清單要能直接打字，先切到文字工具
+  if (!typing && ['pen', 'highlighter', 'eraser', 'hand'].includes(prefs.tool)) setTool('text');
+  editor.toggleChecklist();
+});
+
+function toggleCheckedToBottom() {
+  prefs.checkedToBottom = !prefs.checkedToBottom;
+  savePrefs();
+  editor.setPrefs({ checkedToBottom: prefs.checkedToBottom });
+  toast(prefs.checkedToBottom ? '打勾的項目會移到清單最下面。' : '打勾的項目會留在原位。');
+}
 
 $('mindmap').addEventListener('click', () => {
   if (!editor.page) { toast('請先新增一個頁面。'); return; }

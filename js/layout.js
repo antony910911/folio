@@ -77,7 +77,8 @@ function decodeEntities(s) {
 }
 
 // 文字框的 HTML（已經過 sanitizeHtml，只剩基本標籤）轉成段落和格式片段。
-// 回傳 [{ runs: [{ text, b, i, u, s }], list: null | 'ul' | 'ol', index }]
+// 回傳 [{ runs: [{ text, b, i, u, s }], list: null | 'ul' | 'ol' | 'check', index, depth, checked }]
+// 勾選清單是 <ul class="checklist">，打勾的項目是 <li class="done">；depth 是清單的縮排層級（0 開始）
 export function htmlToParagraphs(html) {
   const paragraphs = [];
   let runs = [];
@@ -86,7 +87,15 @@ export function htmlToParagraphs(html) {
   const lists = [];
   const TAG_STYLE = { b: 'b', strong: 'b', i: 'i', em: 'i', u: 'u', s: 's', strike: 's' };
   const flush = (force = false) => {
-    if (runs.length || force) paragraphs.push({ runs, list: listItem ? listItem.type : null, index: listItem ? listItem.index : 0 });
+    if (runs.length || force) {
+      paragraphs.push({
+        runs,
+        list: listItem ? listItem.type : null,
+        index: listItem ? listItem.index : 0,
+        depth: listItem ? listItem.depth : 0,
+        checked: !!(listItem && listItem.checked),
+      });
+    }
     runs = [];
     listItem = null;
   };
@@ -110,12 +119,16 @@ export function htmlToParagraphs(html) {
       flush(true);
     } else if (tag === 'ul' || tag === 'ol') {
       if (runs.length) flush();
-      if (closing) lists.pop(); else lists.push({ type: tag, count: 0 });
+      const type = tag === 'ul' && hasClass(m[0], 'checklist') ? 'check' : tag;
+      if (closing) lists.pop(); else lists.push({ type, count: 0 });
     } else if (tag === 'li') {
       if (runs.length) flush();
       if (!closing) {
         const list = lists[lists.length - 1];
-        if (list) { list.count++; listItem = { type: list.type, index: list.count }; }
+        if (list) {
+          list.count++;
+          listItem = { type: list.type, index: list.count, depth: lists.length - 1, checked: list.type === 'check' && hasClass(m[0], 'done') };
+        }
       }
     } else if (tag === 'div' || tag === 'p') {
       if (runs.length) flush();
@@ -127,8 +140,38 @@ export function htmlToParagraphs(html) {
   return paragraphs;
 }
 
+function hasClass(tag, name) {
+  const m = tag.match(/\sclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
+  return !!m && (m[1] ?? m[2] ?? m[3]).split(/\s+/).includes(name);
+}
+
+// 段落前面的符號：• 項目、1. 編號、☐ ☑ 勾選清單
+export function listPrefix(p) {
+  if (p.list === 'ul') return '• ';
+  if (p.list === 'ol') return `${p.index}. `;
+  if (p.list === 'check') return p.checked ? '☑ ' : '☐ ';
+  return '';
+}
+
 export function paragraphsToText(paragraphs) {
-  return paragraphs.map((p) => (p.list === 'ul' ? '• ' : p.list === 'ol' ? `${p.index}. ` : '') + p.runs.map((r) => r.text).join('')).join('\n');
+  return paragraphs.map((p) => '  '.repeat(p.depth || 0) + listPrefix(p) + p.runs.map((r) => r.text).join('')).join('\n');
+}
+
+// 整個文字框轉成勾選清單（每一行一項）；如果已經全部是勾選清單，就轉回一般文字
+export function toggleChecklistHtml(paragraphs) {
+  const esc = (t) => t.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const runsHtml = (runs) => runs.map((r) => {
+    let h = esc(r.text);
+    if (r.b) h = `<b>${h}</b>`;
+    if (r.i) h = `<i>${h}</i>`;
+    if (r.u) h = `<u>${h}</u>`;
+    if (r.s) h = `<s>${h}</s>`;
+    return h;
+  }).join('');
+  const lines = paragraphs.filter((p) => p.runs.some((r) => r.text.trim()));
+  if (!lines.length) return '<ul class="checklist"><li><br></li></ul>';
+  if (lines.every((p) => p.list === 'check')) return lines.map((p) => `<div>${runsHtml(p.runs)}</div>`).join('');
+  return '<ul class="checklist">' + lines.map((p) => `<li${p.checked ? ' class="done"' : ''}>${runsHtml(p.runs)}</li>`).join('') + '</ul>';
 }
 
 // 純文字轉成文字框用的 HTML（手寫辨識的結果用）
