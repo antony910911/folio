@@ -4,6 +4,8 @@
   "name": "folio",
   "main": "server/worker.js",
   "compatibility_date": "2026-09-01",
+  // 開啟 https://folio.<你的子網域>.workers.dev 這個網址
+  "workers_dev": true,
   "assets": {
     "directory": ".",
     "binding": "ASSETS"
