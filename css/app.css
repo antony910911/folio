@@ -884,3 +884,111 @@ button.danger-text { color: var(--danger); }
 /* 畫筆模式下文字框不能點，但圓圈要看起來可以點 */
 .mode-draw .tb-body ul.checklist > li::before { cursor: pointer; }
 .dlg-show { display: flex; align-items: center; gap: 6px; margin: -8px 0 14px; font-size: 13px; color: var(--muted); }
+
+/* ---------- 「⋯」設定面板：圖示分門別類 ---------- */
+.panel {
+  position: fixed;
+  z-index: 50;
+  width: 372px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  padding: 10px 12px 12px;
+  border-radius: 16px;
+  background: var(--menu-bg);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 4px;
+}
+.panel-group h3 {
+  margin: 6px 4px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  color: var(--muted);
+}
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  min-height: 78px;
+  padding: 10px 4px 8px;
+  border: 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+  color: var(--fg);
+  cursor: pointer;
+  text-align: center;
+}
+.tile svg { width: 24px; height: 24px; flex: none; }
+.tile:hover:not(:disabled) { background: color-mix(in srgb, var(--fg) 9%, transparent); }
+.tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tile:disabled { opacity: .35; cursor: default; }
+.tile.on { background: var(--accent-soft); color: var(--accent); }
+.tile.on::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.tile-label { font-size: 12px; line-height: 1.25; font-weight: 500; }
+.tile-sub { font-size: 11px; line-height: 1.2; color: var(--muted); margin-top: -2px; }
+.tile.on .tile-sub { color: inherit; opacity: .8; }
+
+/* 頁面背景的小預覽 */
+.bg-swatch {
+  width: 30px;
+  height: 24px;
+  border-radius: 4px;
+  background-color: var(--paper);
+  box-shadow: 0 0 0 1px rgba(20, 28, 45, .15);
+}
+.bg-swatch[data-bg="ruled"] { background-image: linear-gradient(to bottom, transparent 5px, #b9c8e0 5px, #b9c8e0 6px, transparent 6px); background-size: 100% 6px; }
+.bg-swatch[data-bg="grid"] {
+  background-image: linear-gradient(to right, #c7d3e6 1px, transparent 1px), linear-gradient(to bottom, #c7d3e6 1px, transparent 1px);
+  background-size: 6px 6px;
+}
+.bg-swatch[data-bg="dots"] { background-image: radial-gradient(circle, #9fb1cf 0.9px, transparent 1.2px); background-size: 6px 6px; background-position: 3px 3px; }
+.tile.on .bg-swatch { box-shadow: 0 0 0 2px var(--accent); }
+
+/* 手機：面板從下面滑出來，佔滿寬度 */
+@media (max-width: 599px) {
+  .panel {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    width: auto;
+    max-width: none;
+    max-height: 78vh;
+    border-radius: 18px 18px 0 0;
+    padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* 調整筆記本順序 */
+.arrange-list { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 4px; max-height: 50vh; overflow-y: auto; }
+.arrange-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 6px 6px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+.arrange-row.current { background: var(--accent-soft); }
+.arrange-name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.arrange-name svg { width: 18px; height: 18px; color: var(--muted); flex: none; }
+.arrange-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arrange-row .icon-btn { transform: rotate(180deg); }
+.arrange-row .icon-btn.down { transform: none; }
+.arrange-row .icon-btn.small { width: 38px; height: 38px; }

@@ -232,40 +232,61 @@ $('undo').addEventListener('click', () => editor.undo());
 $('redo').addEventListener('click', () => editor.redo());
 $('zoom').addEventListener('click', () => editor.resetZoom());
 
+// 「⋯」設定面板：圖示分門別類排好。開關類的按了不關面板，直接看到狀態變化
 $('more').addEventListener('click', (e) => {
-  const page = editor.page;
-  openMenu(e.currentTarget, [
-    { heading: '頁面背景' },
-    { row: BACKGROUNDS.map((bg) => ({ label: BG_LABELS[bg], on: page && page.background === bg, action: () => editor.setBackground(bg), disabled: !page })) },
-    { sep: true },
-    { label: '只用 Apple Pencil 寫字', hint: '手指只負責捲動', check: prefs.penOnly, action: togglePenOnly },
-    { label: '打勾的項目移到最下面', hint: '勾選清單', check: prefs.checkedToBottom, action: toggleCheckedToBottom },
-    { label: '放大', action: () => editor.zoomBy(1.25) },
-    { label: '縮小', action: () => editor.zoomBy(0.8) },
-    { sep: true },
-    { label: '插入 PDF 或圖片…', hint: '簡報請先另存成 PDF', action: () => $('insert-file').click(), disabled: !page },
-    { sep: true },
-    { heading: '手寫辨識' },
-    { label: '整頁手寫轉文字', hint: '只轉這一頁的筆跡，螢光筆不算', action: () => inkToText(editor.penStrokes()), disabled: !page },
-    { label: '手寫辨識設定…', action: openRecognizeSettings },
-    { sep: true },
-    { label: '跨裝置同步…', hint: syncHint(), action: openSyncSettings },
-    { sep: true },
-    { heading: '匯出' },
-    { label: 'PowerPoint：這一頁', action: () => runExport('pptx', 'page'), disabled: !page },
-    { label: 'PowerPoint：整個分區', action: () => runExport('pptx', 'section'), disabled: !state.sectionId },
-    { label: 'Word：這一頁', action: () => runExport('docx', 'page'), disabled: !page },
-    { label: 'Word：整個分區', action: () => runExport('docx', 'section'), disabled: !state.sectionId },
-    { label: '備份檔', hint: '可以匯入到其他裝置', action: exportBackup },
-    { label: '匯入備份…', action: () => $('import-file').click() },
-  ]);
+  openPanel(e.currentTarget, () => {
+    const page = editor.page;
+    const noPage = !page;
+    return [
+      {
+        title: '頁面',
+        tiles: [
+          ...BACKGROUNDS.map((bg) => ({ bg, label: BG_LABELS[bg], on: page && page.background === bg, disabled: noPage, stay: true, action: () => editor.setBackground(bg) })),
+          { icon: 'insert', label: '插入 PDF／圖片', disabled: noPage, action: () => $('insert-file').click() },
+        ],
+      },
+      {
+        title: '手寫',
+        tiles: [
+          { icon: 'penOnly', label: '只用 Pencil 寫字', sub: '手指捲動', on: prefs.penOnly, stay: true, action: togglePenOnly },
+          { icon: 'ink2text', label: '整頁轉文字', disabled: noPage, action: () => inkToText(editor.penStrokes()) },
+          { icon: 'sliders', label: '辨識設定', action: openRecognizeSettings },
+        ],
+      },
+      {
+        title: '清單與檢視',
+        tiles: [
+          { icon: 'sortDone', label: '打勾的移到最下面', on: prefs.checkedToBottom, stay: true, action: toggleCheckedToBottom },
+          { icon: 'zoomIn', label: '放大', disabled: noPage, stay: true, action: () => editor.zoomBy(1.25) },
+          { icon: 'zoomOut', label: '縮小', disabled: noPage, stay: true, action: () => editor.zoomBy(0.8) },
+        ],
+      },
+      {
+        title: '匯出',
+        tiles: [
+          { icon: 'slides', label: 'PowerPoint', sub: '這一頁', disabled: noPage, action: () => runExport('pptx', 'page') },
+          { icon: 'slides', label: 'PowerPoint', sub: '整個分區', disabled: !state.sectionId, action: () => runExport('pptx', 'section') },
+          { icon: 'doc', label: 'Word', sub: '這一頁', disabled: noPage, action: () => runExport('docx', 'page') },
+          { icon: 'doc', label: 'Word', sub: '整個分區', disabled: !state.sectionId, action: () => runExport('docx', 'section') },
+        ],
+      },
+      {
+        title: '資料與同步',
+        tiles: [
+          { icon: 'cloud', label: '跨裝置同步', sub: syncHint(), on: sync.getConfig().enabled, action: openSyncSettings },
+          { icon: 'download', label: '匯出備份', action: exportBackup },
+          { icon: 'upload', label: '匯入備份', action: () => $('import-file').click() },
+        ],
+      },
+    ];
+  });
 });
 
 function togglePenOnly() {
   prefs.penOnly = !prefs.penOnly;
   savePrefs();
   editor.setPrefs({ penOnly: prefs.penOnly });
-  toast(prefs.penOnly ? '手指改成捲動頁面，只有 Apple Pencil 會寫字。' : '手指也可以寫字了。');
+  toast(prefs.penOnly ? '只有 Apple Pencil 會寫字，手指用來捲動。' : '手指也可以寫字了。');
 }
 
 // ---------- 側邊欄 ----------
@@ -344,6 +365,7 @@ $('nb-switch').addEventListener('click', (e) => {
     ...list.map((n) => ({ label: n.name, check: n.id === state.notebookId, action: () => openNotebook(n.id) })),
     { sep: true },
     { label: '新增筆記本…', action: addNotebook },
+    { label: '調整筆記本順序…', action: arrangeNotebooks, disabled: state.notebooks.length < 2 },
     { label: '重新命名這本…', action: renameNotebook },
     { label: '刪除這本…', danger: true, action: deleteNotebook, disabled: state.notebooks.length < 2 },
   ]);
@@ -549,6 +571,35 @@ async function removeIds(ids) {
   state.notebooks = drop(state.notebooks, ids.notebooks);
   state.sections = drop(state.sections, ids.sections);
   state.pages = drop(state.pages, ids.pages);
+}
+
+// 調整筆記本順序：一個清單，每本旁邊有上移、下移，按了馬上生效
+function arrangeNotebooks() {
+  const render = () => {
+    const list = sortByOrder(state.notebooks);
+    $('arrange-list').innerHTML = list.map((n, i) => `
+      <li class="arrange-row${n.id === state.notebookId ? ' current' : ''}">
+        <span class="arrange-name">${icons.book}<span>${esc(n.name)}</span></span>
+        <button type="button" class="icon-btn small" data-move="${n.id}" data-delta="-1" aria-label="上移「${esc(n.name)}」" ${i === 0 ? 'disabled' : ''}>${icons.chevron}</button>
+        <button type="button" class="icon-btn small down" data-move="${n.id}" data-delta="1" aria-label="下移「${esc(n.name)}」" ${i === list.length - 1 ? 'disabled' : ''}>${icons.chevron}</button>
+      </li>`).join('');
+  };
+  dlgForm.innerHTML = `
+    <h2 class="dlg-title">調整筆記本順序</h2>
+    <p class="dlg-msg">按箭頭上下移動。順序也會同步到其他裝置。</p>
+    <ul class="arrange-list" id="arrange-list"></ul>
+    <div class="dlg-actions"><button type="button" id="dlg-cancel" hidden></button><button class="primary" value="ok">完成</button></div>`;
+  render();
+  $('arrange-list').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-move]');
+    if (!b || b.disabled) return;
+    await reorder('notebooks', state.notebooks, b.dataset.move, Number(b.dataset.delta));
+    render();
+    // 移動後焦點留在同一本的按鈕上，方便連續按
+    const again = $('arrange-list').querySelector(`[data-move="${b.dataset.move}"][data-delta="${b.dataset.delta}"]`);
+    (again && !again.disabled ? again : $('arrange-list').querySelector(`[data-move="${b.dataset.move}"]:not([disabled])`))?.focus();
+  });
+  showDialog(() => true, () => dlgForm.querySelector('[value=ok]').focus());
 }
 
 async function reorder(storeName, list, id, delta) {
@@ -1079,6 +1130,76 @@ function openMenu(anchor, entries) {
   menu.querySelector('button:not([disabled])')?.focus({ preventScroll: true });
 }
 
+// ---------- 圖示面板 ----------
+const panel = document.createElement('div');
+panel.className = 'panel';
+panel.id = 'panel';
+panel.setAttribute('role', 'dialog');
+panel.setAttribute('aria-label', '設定');
+panel.hidden = true;
+document.body.appendChild(panel);
+let panelCleanup = null;
+
+function openPanel(anchor, build) {
+  closeMenu();
+  closePanel();
+  let groups = [];
+  const render = () => {
+    groups = build();
+    panel.innerHTML = groups.map((g, gi) => `
+      <section class="panel-group">
+        <h3>${esc(g.title)}</h3>
+        <div class="tiles">${g.tiles.map((t, ti) => `
+          <button type="button" class="tile${t.on ? ' on' : ''}" data-g="${gi}" data-t="${ti}" ${t.disabled ? 'disabled' : ''} ${t.on != null ? `aria-pressed="${!!t.on}"` : ''}>
+            ${t.bg ? `<span class="bg-swatch" data-bg="${t.bg}"></span>` : icons[t.icon]}
+            <span class="tile-label">${esc(t.label)}</span>
+            ${t.sub ? `<span class="tile-sub">${esc(t.sub)}</span>` : ''}
+          </button>`).join('')}
+        </div>
+      </section>`).join('');
+  };
+  render();
+  panel.onclick = (e) => {
+    const b = e.target.closest('.tile');
+    if (!b || b.disabled) return;
+    const t = groups[b.dataset.g].tiles[b.dataset.t];
+    if (t.stay) {
+      t.action();
+      render();
+      panel.querySelector(`[data-g="${b.dataset.g}"][data-t="${b.dataset.t}"]`)?.focus();
+    } else {
+      closePanel();
+      t.action();
+    }
+  };
+  panel.hidden = false;
+  const r = anchor.getBoundingClientRect();
+  if (window.innerWidth >= 600) {
+    panel.style.left = Math.max(8, Math.min(window.innerWidth - panel.offsetWidth - 8, r.right - panel.offsetWidth)) + 'px';
+    panel.style.top = r.bottom + 8 + 'px';
+  } else {
+    panel.style.left = '';
+    panel.style.top = '';
+  }
+  const onDown = (e) => { if (!panel.contains(e.target) && !anchor.contains(e.target)) closePanel(); };
+  const onKey = (e) => { if (e.key === 'Escape') closePanel(); };
+  setTimeout(() => {
+    document.addEventListener('pointerdown', onDown, true);
+    document.addEventListener('keydown', onKey);
+  });
+  panelCleanup = () => {
+    document.removeEventListener('pointerdown', onDown, true);
+    document.removeEventListener('keydown', onKey);
+  };
+  panel.querySelector('.tile:not([disabled])')?.focus({ preventScroll: true });
+}
+
+function closePanel() {
+  panel.hidden = true;
+  if (panelCleanup) panelCleanup();
+  panelCleanup = null;
+}
+
 function closeMenu() {
   menu.hidden = true;
   if (menuCleanup) menuCleanup();
@@ -1154,7 +1275,7 @@ function hideToast() {
 
 // ---------- 鍵盤快速鍵 ----------
 window.addEventListener('keydown', (e) => {
-  if (dlg.open || !menu.hidden) return;
+  if (dlg.open || !menu.hidden || !panel.hidden) return;
   if (e.key === 'Escape' && !editor.isTyping()) { editor.clearSelection(); return; }
   const mod = e.metaKey || e.ctrlKey;
   if (editor.isTyping()) return;
