@@ -120,6 +120,7 @@ vendor/               PptxGenJS 4.0.1、docx 9.7.2、Anthropic SDK 0.128.0（打
                       PDF.js 6.3.289（legacy 版，含中文字型對照表），授權檔在同一個資料夾
 sw.js                 離線快取（改檔案時記得把 VERSION 加一）
 tools/build-preview.mjs  把整個 App 打包成單一 HTML，用來做線上預覽
+tools/make_icons.py   產生 App 圖示（和 Beamup、Mothership 同風格的像素星空；需要 Pillow）
 ```
 
 ### 資料格式
