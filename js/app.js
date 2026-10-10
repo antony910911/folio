@@ -721,7 +721,8 @@ async function openSyncSettings() {
     <h2 class="dlg-title">跨裝置同步</h2>
     <p class="dlg-msg">${esc(statusText)}</p>
     <label class="dlg-label" for="sync-token">同步密碼</label>
-    <input class="dlg-input" id="sync-token" type="password" autocomplete="off" spellcheck="false" placeholder="和 Cloudflare 上設定的 SYNC_TOKEN 一樣">
+    <input class="dlg-input" id="sync-token" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="和 Cloudflare 上設定的 SYNC_TOKEN 一樣">
+    <label class="dlg-show"><input type="checkbox" id="sync-show"> 顯示密碼</label>
     <details class="dlg-more"><summary>進階：同步伺服器網址</summary>
       <input class="dlg-input" id="sync-url" autocomplete="off" spellcheck="false" placeholder="留空＝目前這個網址">
     </details>
@@ -732,6 +733,7 @@ async function openSyncSettings() {
   // 這兩個不是送出按鈕：在密碼欄按 Enter 只會儲存，不會誤按到停用
   for (const b of dlgForm.querySelectorAll('[data-close]')) b.addEventListener('click', () => dlg.close(b.dataset.close));
   $('sync-token').value = cfg.token;
+  $('sync-show').addEventListener('change', (e) => { $('sync-token').type = e.target.checked ? 'text' : 'password'; });
   $('sync-url').value = cfg.url;
   const choice = await showDialogChoice(() => ({ token: $('sync-token').value.trim(), url: $('sync-url').value.trim() }));
   if (!choice) return;
@@ -742,15 +744,19 @@ async function openSyncSettings() {
     return;
   }
   if (action === 'now') { sync.syncNow(); return; }
-  if (!/^[A-Za-z0-9._~-]{12,200}$/.test(value.token)) {
-    toast('同步密碼至少 12 個字元，只能用英文字母、數字和 . _ ~ -');
+  if (value.token.length < 8) {
+    toast('同步密碼至少要 8 個字。');
     return;
   }
   if (action === 'save' && value.token === cfg.token && value.url === cfg.url) return;
   toast('正在連線…', { sticky: true });
   const res = await sync.probe(value.url, value.token);
   if (!res.ok) {
-    toast({ unauthorized: '同步密碼不對。', offline: '連不上同步伺服器，請確認網址和網路。', not_configured: '伺服器還沒有設定 SYNC_TOKEN。' }[res.code] || '連線失敗，請稍後再試。');
+    toast({
+      unauthorized: '同步密碼和 Cloudflare 上的 SYNC_TOKEN 不一樣。可以勾「顯示密碼」檢查大小寫。',
+      offline: '連不上同步伺服器。請確認網路，或是不是在 Folio 自己的網址（workers.dev）開啟的。',
+      not_configured: 'Cloudflare 上還沒有設定 SYNC_TOKEN，或設定後還沒按 Deploy。',
+    }[res.code] || `連線失敗（${res.code}），請稍後再試。`);
     return;
   }
   let mode = 'upload';
@@ -761,10 +767,15 @@ async function openSyncSettings() {
     mode = 'merge';
   }
   toast('正在同步…', { sticky: true });
-  await flush();
-  await sync.enable(value.url, value.token, mode);
-  await reloadFromStore();
-  toast(mode === 'replace' ? '已換成雲端的筆記。' : '已開啟同步。');
+  try {
+    await flush();
+    await sync.enable(value.url, value.token, mode);
+    await reloadFromStore();
+    toast(mode === 'replace' ? '已換成雲端的筆記。' : '已開啟同步。');
+  } catch (e) {
+    console.error(e);
+    toast(`開啟同步時出錯：${e && e.message ? e.message : e}。請截圖給開發者。`);
+  }
 }
 
 function askSyncMode() {

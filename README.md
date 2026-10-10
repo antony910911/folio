@@ -36,7 +36,7 @@
 App 和同步伺服器放在同一個 Cloudflare Worker。免費方案就夠個人使用。
 
 1. Cloudflare 後台 › **Workers & Pages** › **Create** › **Import a repository**，選 `folio` 這個 repo。設定都用預設值（部署指令是 `npx wrangler deploy`，會讀 `wrangler.jsonc`）。之後每次推到 `main` 都會自動部署。
-2. 第一次部署完成後，到這個 Worker 的 **Settings › Variables and Secrets** › **Add**：類型選 **Secret**，名稱 `SYNC_TOKEN`，值是你自己的同步密碼（至少 12 個字，只能用英文字母、數字和 `. _ ~ -`；可以用密碼管理工具產生的強密碼）。
+2. 第一次部署完成後，到這個 Worker 的 **Settings › Variables and Secrets** › **Add**：類型選 **Secret**，名稱 `SYNC_TOKEN`，值是你自己的同步密碼（至少 8 個字，可以用符號和中文；前後的空白會被忽略）。設定完記得按 **Deploy**。
 3. 在 iPad 的 Safari 打開 `https://folio.<你的子網域>.workers.dev`，按分享 › **加入主畫面**。
 4. 點側邊欄最下面的「開啟跨裝置同步」，輸入同一組同步密碼。
 5. 其他裝置也打開同一個網址、輸入同一組密碼。第一次會問要「使用雲端的筆記」（新裝置選這個）還是「合併兩邊」。

@@ -883,3 +883,4 @@ button.danger-text { color: var(--danger); }
 .tb-body ul.checklist > li.done > ul { color: #1d2330; text-decoration: none; }
 /* 畫筆模式下文字框不能點，但圓圈要看起來可以點 */
 .mode-draw .tb-body ul.checklist > li::before { cursor: pointer; }
+.dlg-show { display: flex; align-items: center; gap: 6px; margin: -8px 0 14px; font-size: 13px; color: var(--muted); }

@@ -63,12 +63,20 @@ function apiBase() {
   return (base || location.origin) + '/api';
 }
 
+// 密碼可能有符號或中文，HTTP 標頭放不下，所以編碼成 b64.<base64url>（伺服器會解回來）
+export function encodeToken(token) {
+  const bytes = new TextEncoder().encode((token || '').trim());
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return 'b64.' + btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
 async function api(path, opts = {}) {
   let res;
   try {
     res = await fetch(apiBase() + path, {
       ...opts,
-      headers: { Authorization: `Bearer ${config.token}`, 'X-Folio-Device': state.device, ...(opts.headers || {}) },
+      headers: { Authorization: `Bearer ${encodeToken(config.token)}`, 'X-Folio-Device': state.device, ...(opts.headers || {}) },
     });
   } catch {
     throw Object.assign(new Error('offline'), { code: 'offline' });
@@ -324,7 +332,7 @@ function connect() {
   if (!config.enabled || !config.token) return;
   const url = apiBase().replace(/^http/, 'ws') + '/ws?device=' + encodeURIComponent(state.device);
   try {
-    ws = new WebSocket(url, ['folio', 'token.' + config.token]);
+    ws = new WebSocket(url, ['folio', 'token.' + encodeToken(config.token)]);
   } catch {
     scheduleReconnect();
     return;

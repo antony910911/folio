@@ -15,8 +15,10 @@ export default {
     const url = new URL(request.url);
     if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(request) });
-    if (!env.SYNC_TOKEN) return json(request, { error: 'not_configured' }, 503);
-    if (!(await authorized(request, env.SYNC_TOKEN))) return json(request, { error: 'unauthorized' }, 401);
+    // 在後台貼上密碼時常會多帶空白或換行，前後的空白不算
+    const token = (env.SYNC_TOKEN || '').trim();
+    if (!token) return json(request, { error: 'not_configured' }, 503);
+    if (!(await authorized(request, token))) return json(request, { error: 'unauthorized' }, 401);
     const stub = env.LIBRARY.getByName('main');
     const res = await stub.fetch(request);
     if (res.webSocket) return res;
@@ -34,10 +36,25 @@ async function authorized(request, token) {
   const protocols = (request.headers.get('Sec-WebSocket-Protocol') || '').split(',').map((s) => s.trim());
   const p = protocols.find((s) => s.startsWith('token.'));
   if (!given && p) given = p.slice(6);
+  given = decodeToken(given);
   if (!given) return false;
   const enc = new TextEncoder();
   const [a, b] = await Promise.all([given, token].map((s) => crypto.subtle.digest('SHA-256', enc.encode(s))));
   return crypto.subtle.timingSafeEqual(a, b);
+}
+
+// App 會把密碼編碼成 b64.<base64url>，這樣密碼可以有符號、中文（HTTP 標頭和 WebSocket 子協定只收部分字元）。
+// 沒有 b64. 開頭的照原樣比對（Beamup 和舊版 App）。
+function decodeToken(s) {
+  s = (s || '').trim();
+  if (!s.startsWith('b64.')) return s;
+  try {
+    const b64 = s.slice(4).replace(/-/g, '+').replace(/_/g, '/');
+    const bin = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4));
+    return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0))).trim();
+  } catch {
+    return '';
+  }
 }
 
 function cors(request) {
