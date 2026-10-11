@@ -1109,3 +1109,33 @@ button.danger-text { color: var(--danger); }
 }
 
 .panel-foot { margin: 4px 4px 0; font-size: 11.5px; color: var(--muted); text-align: center; }
+
+/* 懸浮鎖定按鈕 */
+.lock-fab {
+  position: fixed;
+  z-index: 25;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 0;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: rgba(30, 36, 48, .78);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .22);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  touch-action: none;
+  cursor: grab;
+  transition: left .2s ease, top .2s ease, opacity .3s, background .2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.lock-fab[hidden] { display: none; }
+.lock-fab svg { width: 24px; height: 24px; }
+.lock-fab.on { background: color-mix(in srgb, var(--accent) 88%, transparent); }
+.lock-fab.idle { opacity: .45; }
+.lock-fab.dragging { transition: none; opacity: 1; cursor: grabbing; }
+/* 鎖定中：頁面只能捲動，工具列的編輯按鈕變淡（按了會自動解鎖） */
+.viewport.read-only { cursor: grab; }
+.viewport.read-only .tb-body { cursor: inherit; -webkit-user-select: none; user-select: none; }
+body.view-locked #tools, body.view-locked #tool-opts { opacity: .45; }

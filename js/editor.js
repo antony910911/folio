@@ -273,7 +273,7 @@ export function createEditor(viewport, hooks = {}) {
     box.style.left = it.x + 'px';
     box.style.top = it.y + 'px';
     box.style.width = it.w + 'px';
-    box.innerHTML = `<div class="tb-handle" title="拖曳移動"></div><div class="tb-body" contenteditable="true" spellcheck="false"></div><div class="tb-resize" title="拖曳調整寬度"></div>`;
+    box.innerHTML = `<div class="tb-handle" title="拖曳移動"></div><div class="tb-body" contenteditable="${readOnly ? 'false' : 'true'}" spellcheck="false"></div><div class="tb-resize" title="拖曳調整寬度"></div>`;
     box.querySelector('.tb-body').innerHTML = sanitizeHtml(it.html);
     return box;
   }
@@ -926,7 +926,42 @@ export function createEditor(viewport, hooks = {}) {
     applyView();
   }
 
+  // ---------- 鎖定畫面（只能看）：任何手指、筆、滑鼠都只會捲動和縮放，不會碰到內容 ----------
+  let readOnly = false;
   viewport.addEventListener('pointerdown', (e) => {
+    if (!readOnly || e.target.closest('.scrollbar')) return;
+    e.stopPropagation(); // 文字框、心智圖、清單圓圈自己的處理都不要跑
+    e.preventDefault();
+    if (e.pointerType === 'touch') {
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touches.size === 2) { cancelGesture(); startPinch(); return; }
+      if (touches.size > 2) return;
+    }
+    if (e.button === 2) return;
+    try { viewport.setPointerCapture(e.pointerId); } catch { /* 合成事件 */ }
+    gesture = { kind: 'pan', id: e.pointerId, start: { cx: e.clientX, cy: e.clientY, view: { ...view } } };
+    viewport.classList.add('panning');
+  }, true);
+  for (const type of ['click', 'dblclick']) {
+    viewport.addEventListener(type, (e) => {
+      if (readOnly && !e.target.closest('.scrollbar')) { e.stopPropagation(); e.preventDefault(); }
+    }, true);
+  }
+  function setReadOnly(on) {
+    readOnly = !!on;
+    if (readOnly) {
+      blurText();
+      clearNode();
+      setSelection([]);
+      if (document.activeElement === titleInput) titleInput.blur();
+    }
+    viewport.classList.toggle('read-only', readOnly);
+    for (const b of textLayer.querySelectorAll('.tb-body')) b.contentEditable = readOnly ? 'false' : 'true';
+    titleInput.readOnly = readOnly;
+  }
+
+  viewport.addEventListener('pointerdown', (e) => {
+    if (readOnly) return;
     if (e.target.closest('.selbar, .mmbar, .scrollbar')) return;
     if (mm) clearNode();
     const onText = e.target.closest('.textbox, .page-head');
@@ -1341,7 +1376,7 @@ export function createEditor(viewport, hooks = {}) {
 
   // 鍵盤操作（沒有在打字時）：回傳 true 代表處理掉了
   function handleKey(e) {
-    if (!mm || mm.editing) return false;
+    if (readOnly || !mm || mm.editing) return false;
     const it = mapItem();
     if (!it) return false;
     const node = findNode(it.root, mm.nodeId);
@@ -1568,7 +1603,7 @@ export function createEditor(viewport, hooks = {}) {
 
   return {
     load, setTool, setPrefs, setBackground, undo, redo, zoomBy, resetZoom, focusTitle,
-    deleteSelection, duplicateSelection, isTyping,
+    deleteSelection, duplicateSelection, isTyping, setReadOnly, isReadOnly: () => readOnly,
     get tool() { return tool; },
     get prefs() { return prefs; },
     get page() { return page; },

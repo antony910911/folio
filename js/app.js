@@ -46,6 +46,9 @@ let prefs = {
   penOnly: false,
   checkedToBottom: false,
   sidebar: true,
+  viewLock: false, // 鎖定畫面：只能捲動和縮放
+  lockFab: null, // 懸浮鎖定按鈕：null = 觸控裝置預設顯示
+  fabPos: null, // { side: 'left' | 'right', y: 0~1 }
   last: {},
 };
 try { prefs = { ...prefs, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') }; } catch { /* 用預設值 */ }
@@ -269,6 +272,8 @@ $('more').addEventListener('click', (e) => {
       {
         title: '清單與檢視',
         tiles: [
+          { icon: prefs.viewLock ? 'lock' : 'unlock', label: '鎖定畫面', sub: prefs.viewLock ? '只能捲動、縮放' : '防止誤觸', on: prefs.viewLock, disabled: noPage, stay: true, action: () => setViewLock(!prefs.viewLock) },
+          { icon: 'fab', label: '懸浮鎖定按鈕', sub: '可以拖到任何位置', on: fabEnabled(), stay: true, action: toggleFab },
           { icon: 'sortDone', label: '打勾的移到最下面', on: prefs.checkedToBottom, stay: true, action: toggleCheckedToBottom },
           { icon: 'zoomIn', label: '放大', disabled: noPage, stay: true, action: () => editor.zoomBy(1.25) },
           { icon: 'zoomOut', label: '縮小', disabled: noPage, stay: true, action: () => editor.zoomBy(0.8) },
@@ -297,7 +302,7 @@ $('more').addEventListener('click', (e) => {
 });
 
 // 版本和字型狀態：各台裝置版面對不起來時，先確認是不是都更新到同一版
-const APP_VERSION = 'v18';
+const APP_VERSION = 'v19';
 function versionLine() {
   const font = !document.fonts || !document.fonts.check ? '' : document.fonts.check('16px "Noto Sans TC"', '筆記')
     ? '筆記字型已載入' : '筆記字型還沒載入（正在用系統字型，換行可能和其他裝置不同）';
@@ -566,7 +571,110 @@ function showPage(page, content) {
   $('empty').hidden = !!page || !state.sectionId;
   editorEl.hidden = !page;
   if (page) editor.load(page, content);
+  renderFab();
 }
+
+// ---------- 鎖定畫面＋懸浮按鈕（像 iPhone 的輔助觸控，可以拖到任何位置） ----------
+const coarse = window.matchMedia('(pointer: coarse)');
+function fabEnabled() { return prefs.lockFab == null ? coarse.matches : prefs.lockFab; }
+
+function setViewLock(on) {
+  prefs.viewLock = !!on;
+  savePrefs();
+  editor.setReadOnly(prefs.viewLock);
+  document.body.classList.toggle('view-locked', prefs.viewLock);
+  renderFab();
+  toast(prefs.viewLock ? '已鎖定畫面：只能捲動和縮放，不會點到內容。' : '已解除鎖定，可以編輯了。');
+}
+
+function toggleFab() {
+  prefs.lockFab = !fabEnabled();
+  savePrefs();
+  renderFab();
+}
+
+const fab = document.createElement('button');
+fab.type = 'button';
+fab.className = 'lock-fab';
+document.body.appendChild(fab);
+const FAB_SIZE = 52;
+let fabIdle = null;
+
+function renderFab() {
+  fab.hidden = !fabEnabled() || editorEl.hidden;
+  fab.innerHTML = prefs.viewLock ? icons.lock : icons.unlock;
+  fab.classList.toggle('on', prefs.viewLock);
+  fab.setAttribute('aria-pressed', String(prefs.viewLock));
+  fab.setAttribute('aria-label', prefs.viewLock ? '解除鎖定畫面' : '鎖定畫面');
+  fab.title = prefs.viewLock ? '點一下解除鎖定（拖曳可以移動按鈕）' : '點一下鎖定畫面（拖曳可以移動按鈕）';
+  if (!fab.hidden) placeFab();
+  wakeFab();
+}
+
+function placeFab() {
+  const pos = prefs.fabPos || { side: 'right', y: 0.72 };
+  const margin = 12;
+  const x = pos.side === 'left' ? margin : window.innerWidth - FAB_SIZE - margin;
+  const y = Math.min(window.innerHeight - FAB_SIZE - 24, Math.max(64, pos.y * window.innerHeight));
+  fab.style.left = x + 'px';
+  fab.style.top = y + 'px';
+}
+
+// 一陣子沒碰就變淡，比較不擋畫面
+function wakeFab() {
+  fab.classList.remove('idle');
+  clearTimeout(fabIdle);
+  fabIdle = setTimeout(() => fab.classList.add('idle'), 2500);
+}
+
+fab.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  fab.setPointerCapture(e.pointerId);
+  wakeFab();
+  const r = fab.getBoundingClientRect();
+  const dx = e.clientX - r.left;
+  const dy = e.clientY - r.top;
+  let moved = false;
+  const sx = e.clientX;
+  const sy = e.clientY;
+  fab.classList.add('dragging');
+  const move = (ev) => {
+    if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 8) return;
+    moved = true;
+    fab.style.left = Math.min(window.innerWidth - FAB_SIZE, Math.max(0, ev.clientX - dx)) + 'px';
+    fab.style.top = Math.min(window.innerHeight - FAB_SIZE, Math.max(0, ev.clientY - dy)) + 'px';
+  };
+  const up = (ev) => {
+    fab.removeEventListener('pointermove', move);
+    fab.removeEventListener('pointerup', up);
+    fab.removeEventListener('pointercancel', up);
+    fab.classList.remove('dragging');
+    if (!moved) {
+      if (ev.type === 'pointerup') setViewLock(!prefs.viewLock);
+      return;
+    }
+    // 放開後貼到比較近的左邊或右邊
+    const b = fab.getBoundingClientRect();
+    prefs.fabPos = { side: b.left + FAB_SIZE / 2 < window.innerWidth / 2 ? 'left' : 'right', y: b.top / window.innerHeight };
+    savePrefs();
+    placeFab();
+    wakeFab();
+  };
+  fab.addEventListener('pointermove', move);
+  fab.addEventListener('pointerup', up);
+  fab.addEventListener('pointercancel', up);
+});
+fab.addEventListener('click', (e) => e.preventDefault()); // 鍵盤操作（Enter／空白鍵）才走這裡
+fab.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setViewLock(!prefs.viewLock); } });
+window.addEventListener('resize', () => { if (!fab.hidden) placeFab(); });
+
+// 鎖定中按了畫筆、插入、復原這些會改內容的按鈕：先自動解除鎖定
+$('toolbar').addEventListener('click', (e) => {
+  if (!prefs.viewLock) return;
+  const b = e.target.closest('button');
+  if (!b || ['toggle-sidebar', 'more', 'zoom'].includes(b.id)) return;
+  setViewLock(false);
+}, true);
 
 // ---------- 隱藏、上鎖 ----------
 // unlocked、revealHidden 只存在記憶體：重新整理、切換 App 或關掉螢幕就會恢復成鎖上、隱藏
@@ -585,6 +693,7 @@ async function showLocked(nb) {
   editorEl.hidden = true;
   $('empty').hidden = true;
   $('locked').hidden = false;
+  renderFab();
   $('locked-title').textContent = `「${nb.name}」已上鎖`;
   $('unlock-code').value = '';
   renderSidebar();
@@ -1578,6 +1687,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !editor.isTyping()) { editor.clearSelection(); return; }
   const mod = e.metaKey || e.ctrlKey;
   if (editor.isTyping()) return;
+  if (prefs.viewLock) return; // 鎖定畫面時不接受會改內容的快速鍵
   if (!mod && editor.handleKey(e)) return;
   if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) editor.redo(); else editor.undo(); return; }
   if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); editor.redo(); return; }
@@ -1616,6 +1726,8 @@ async function boot() {
   applySidebar();
   editor.setTool(prefs.tool);
   renderTools();
+  editor.setReadOnly(prefs.viewLock);
+  document.body.classList.toggle('view-locked', prefs.viewLock);
   openLast();
 }
 
