@@ -11,6 +11,7 @@ import { strokeBounds } from './ink.js';
 import { clusterBoxes } from './layout.js';
 import { renderStrokes, canvasToBlob } from './inkrender.js';
 import { exportPptx, exportDocx, saveFile, safeFilename } from './exporter.js';
+import { exportPdf } from './pdfexport.js';
 import { recognize, backend, getApiKey, setApiKey } from './recognize.js';
 import { fileKind, openPdf, prepareImage } from './importer.js';
 import * as sync from './sync.js';
@@ -264,6 +265,7 @@ $('more').addEventListener('click', (e) => {
       {
         title: '匯出',
         tiles: [
+          { icon: 'pdf', label: 'PDF', sub: '選擇頁面', disabled: !state.sectionId, action: openPdfExport },
           { icon: 'slides', label: 'PowerPoint', sub: '這一頁', disabled: noPage, action: () => runExport('pptx', 'page') },
           { icon: 'slides', label: 'PowerPoint', sub: '整個分區', disabled: !state.sectionId, action: () => runExport('pptx', 'section') },
           { icon: 'doc', label: 'Word', sub: '這一頁', disabled: noPage, action: () => runExport('docx', 'page') },
@@ -639,6 +641,63 @@ async function runExport(kind, scope) {
     const getAsset = (id) => store.getAsset(id);
     const blob = kind === 'pptx' ? await exportPptx(entries, title, getAsset) : await exportDocx(entries, title, getAsset);
     await deliver(blob, `${safeFilename(title)}.${kind}`);
+  } catch (e) {
+    console.error(e);
+    toast(e && e.message ? e.message : '匯出失敗，請再試一次。');
+  } finally {
+    exporting = false;
+  }
+}
+
+// ---------- 匯出 PDF ----------
+// 勾選分區裡要輸出的頁面，每頁照畫面的樣子畫成 A4
+async function openPdfExport() {
+  if (exporting) return;
+  const sc = state.sections.find((x) => x.id === state.sectionId);
+  const pages = pagesOf(state.sectionId);
+  if (!sc || !pages.length) { toast('這個分區沒有頁面。'); return; }
+  dlgForm.innerHTML = `
+    <h2 class="dlg-title">匯出 PDF</h2>
+    <p class="dlg-msg">勾選要放進 PDF 的頁面（${esc(sc.name)}）。</p>
+    <label class="pdf-all"><input type="checkbox" id="pdf-all" checked><span>全選</span></label>
+    <div class="pdf-pages">${pages.map((p) => `
+      <label class="pdf-page${p.id === state.pageId ? ' current' : ''}"><input type="checkbox" name="pdf-page" value="${esc(p.id)}" checked><span>${esc(pageDisplayTitle(p))}</span><small>${p.id === state.pageId ? '目前這頁' : esc(shortDate(p.updatedAt))}</small></label>`).join('')}
+    </div>
+    <label class="pdf-opt"><input type="checkbox" id="pdf-bg"><span>保留頁面的格線</span></label>
+    <div class="dlg-actions"><button type="button" class="ghost" id="dlg-cancel">取消</button><button class="primary" value="ok" id="pdf-ok">匯出 PDF</button></div>`;
+  const boxes = [...dlgForm.querySelectorAll('[name=pdf-page]')];
+  const all = $('pdf-all');
+  const refresh = () => {
+    const n = boxes.filter((b) => b.checked).length;
+    all.checked = n === boxes.length;
+    all.indeterminate = n > 0 && n < boxes.length;
+    $('pdf-ok').disabled = n === 0;
+    $('pdf-ok').textContent = n ? `匯出 PDF（${n} 頁）` : '匯出 PDF';
+  };
+  all.addEventListener('change', () => { for (const b of boxes) b.checked = all.checked; refresh(); });
+  for (const b of boxes) b.addEventListener('change', refresh);
+  refresh();
+  const choice = await showDialog(
+    () => ({ ids: boxes.filter((b) => b.checked).map((b) => b.value), background: $('pdf-bg').checked }),
+    () => $('pdf-ok').focus(),
+  );
+  if (!choice || !choice.ids.length) return;
+  exporting = true;
+  try {
+    await flush();
+    const chosen = pages.filter((p) => choice.ids.includes(p.id));
+    toast('正在產生 PDF…', { sticky: true });
+    const entries = [];
+    for (const p of chosen) {
+      const c = await store.getContent(p.id);
+      entries.push({ page: p, items: c ? c.items : [] });
+    }
+    const title = chosen.length === 1 ? pageDisplayTitle(chosen[0]) : sc.name;
+    const blob = await exportPdf(entries, title, (id) => store.getAsset(id), {
+      background: choice.background,
+      onProgress: (i, n) => toast(`正在產生 PDF…（${i}/${n}）`, { sticky: true }),
+    });
+    await deliver(blob, `${safeFilename(title)}.pdf`);
   } catch (e) {
     console.error(e);
     toast(e && e.message ? e.message : '匯出失敗，請再試一次。');

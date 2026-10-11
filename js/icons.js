@@ -25,6 +25,7 @@ export const icons = {
   zoomIn: wrap('<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5M8 10.5h5M10.5 8v5"/>'),
   zoomOut: wrap('<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5M8 10.5h5"/>'),
   slides: wrap('<rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M12 16v4M8.5 20h7M7 12.5l3-3 2.5 2 4-4"/>'),
+  pdf: wrap('<path d="M6 3.5h8l4 4v13H6z"/><path d="M14 3.5v4h4"/><path d="M8.5 17.5v-4h1.3a1.2 1.2 0 010 2.4H8.5M12.5 17.5v-4h.8a1.6 1.6 0 011.6 1.6v.8a1.6 1.6 0 01-1.6 1.6zM17 13.5h-1.4v4M15.6 15.5h1.2" stroke-width="1.3"/>'),
   doc: wrap('<path d="M6 3.5h8l4 4v13H6z"/><path d="M14 3.5v4h4M9 12h6M9 15h6M9 18h4"/>'),
   download: wrap('<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5"/><path d="M4 15.5v3.5h16v-3.5"/>'),
   upload: wrap('<path d="M12 15V4M7.5 8.5L12 4l4.5 4.5"/><path d="M4 15.5v3.5h16v-3.5"/>'),

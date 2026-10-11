@@ -992,3 +992,14 @@ button.danger-text { color: var(--danger); }
 .arrange-row .icon-btn { transform: rotate(180deg); }
 .arrange-row .icon-btn.down { transform: none; }
 .arrange-row .icon-btn.small { width: 38px; height: 38px; }
+
+/* 匯出 PDF：選頁面 */
+.pdf-all, .pdf-opt { display: flex; align-items: center; gap: 8px; padding: 4px 2px; }
+.pdf-all input, .pdf-opt input, .pdf-page input { accent-color: var(--accent); width: 18px; height: 18px; margin: 0; flex: none; }
+.pdf-pages { display: grid; gap: 4px; max-height: min(44vh, 360px); overflow-y: auto; margin: 6px 0 12px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; }
+.pdf-page { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; min-height: 40px; }
+.pdf-page:hover { background: var(--hover, rgba(127,127,127,.08)); }
+.pdf-page span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pdf-page small { color: var(--muted); font-size: 12px; flex: none; }
+.pdf-page.current small { color: var(--accent); }
+.pdf-opt { margin-bottom: 14px; }
