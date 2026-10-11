@@ -10,7 +10,9 @@ import { measureMindmap, branchColor } from './mindmap-view.js';
 import { edgePath } from './mindmap.js';
 import { wrapRuns, pageBreaks, buildPdf, A4 } from './pdfmodel.js';
 
-const FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif';
+// 和畫面上的文字框、心智圖同一套字型（css 的 --note-font），換行才會一樣
+const FONT = '"Noto Sans TC", -apple-system, BlinkMacSystemFont, "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif';
+const TITLE_FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif';
 const INK = '#1d2330';
 const MUTED = '#8a92a0';
 const RES = 2; // 畫布每個頁面 px 畫幾個像素
@@ -66,13 +68,13 @@ async function collect(page, items, getAsset) {
 
 function drawHeader(ctx, page) {
   ctx.fillStyle = INK;
-  ctx.font = fontFor(30, {}, 600);
+  ctx.font = `600 30px ${TITLE_FONT}`;
   ctx.textBaseline = 'top';
   ctx.fillText(pageDisplayTitle(page), 64, 46);
   ctx.fillStyle = '#c9d0db';
   ctx.fillRect(64, 84, 640, 1);
   ctx.fillStyle = '#7a8291';
-  ctx.font = fontFor(13);
+  ctx.font = `400 13px ${TITLE_FONT}`;
   ctx.fillText(formatDate(page.createdAt).replace(/\s+/g, ' '), 64, 98);
 }
 
@@ -271,7 +273,28 @@ async function renderPage(page, items, getAsset, { background }) {
 }
 
 // entries: [{ page, items }]；onProgress(i, total)
+// 網路字型是依用到的字分批下載的：先把這幾頁會用到的字都載好，畫布上才不會變成別的字型
+async function loadFonts(entries) {
+  if (!document.fonts || !document.fonts.load) return;
+  let text = '';
+  const walk = (n) => { text += n.text; n.children.forEach(walk); };
+  for (const { items } of entries) {
+    for (const it of items) {
+      if (it.type === 'text') text += it.html.replace(/<[^>]*>/g, '');
+      else if (it.type === 'mindmap') walk(it.root);
+    }
+  }
+  const chars = [...new Set(text)].join('') || 'a';
+  try {
+    await Promise.race([
+      Promise.all([400, 600, 700].map((w) => document.fonts.load(`${w} 16px "Noto Sans TC"`, chars))),
+      new Promise((r) => setTimeout(r, 8000)), // 離線或很慢時不要卡住，用系統字型
+    ]);
+  } catch { /* 用系統字型 */ }
+}
+
 export async function exportPdf(entries, title, getAsset, { background = false, onProgress } = {}) {
+  await loadFonts(entries);
   const pages = [];
   for (const [i, { page, items }] of entries.entries()) {
     if (onProgress) onProgress(i + 1, entries.length);

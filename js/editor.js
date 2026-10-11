@@ -1429,8 +1429,17 @@ export function createEditor(viewport, hooks = {}) {
     page.updatedAt = Date.now();
     emit('onTitle', page);
   });
+  // 中文輸入法選字時按的 Enter 不能當成「打完了」：在選字途中讓輸入框失去焦點，
+  // Safari 會把還沒確定的字再送一次，標題就變成重複兩遍
+  let titleComposing = false;
+  let titleComposeEnd = 0;
+  titleInput.addEventListener('compositionstart', () => { titleComposing = true; });
+  titleInput.addEventListener('compositionend', () => { titleComposing = false; titleComposeEnd = Date.now(); });
   titleInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); titleInput.blur(); }
+    if (e.key !== 'Enter') return;
+    if (e.isComposing || e.keyCode === 229 || titleComposing || Date.now() - titleComposeEnd < 80) return;
+    e.preventDefault();
+    titleInput.blur();
   });
 
   function isTyping() {

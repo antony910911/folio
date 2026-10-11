@@ -32,6 +32,7 @@ function bundleModule(name) {
 const css = readFileSync(join(root, 'css', 'app.css'), 'utf8');
 const js = ORDER.map(bundleModule).join('\n\n');
 const html = `<title>Folio</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;600;700&display=swap">
 <meta name="description" content="自己的筆記本：分區、頁面、Apple Pencil 手寫和自由擺放的文字框">
 <style>
 ${css}

@@ -1,6 +1,6 @@
 // 離線快取：App 本身的檔案先從快取讀，背景再更新。
 // 新增或改名檔案時請更新 FILES 並把 VERSION 加一。
-const VERSION = 'v13';
+const VERSION = 'v14';
 const CACHE = `folio-${VERSION}`;
 const FILES = [
   './',
@@ -51,6 +51,17 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
+  // 字型：存一份在裝置上，離線也能用（版本更新時不清掉）
+  if (e.request.method === 'GET' && (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com')) {
+    e.respondWith(caches.open('fonts-v1').then(async (cache) => {
+      const cached = await cache.match(e.request);
+      if (cached) return cached;
+      const res = await fetch(e.request);
+      if (res.ok || res.type === 'opaque') cache.put(e.request, res.clone());
+      return res;
+    }));
+    return;
+  }
   if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith('/api/')) return;
   e.respondWith(
     caches.open(CACHE).then(async (cache) => {
