@@ -348,6 +348,28 @@ body:not(.sidebar-open) .resizer.edge { display: none; }
 }
 .empty-title { margin: 0; font-size: 16px; }
 
+/* 上鎖的筆記本 */
+.locked {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 24px 16px;
+  color: var(--muted);
+  background: var(--bg, var(--chrome));
+  z-index: 5;
+}
+.locked[hidden] { display: none; }
+.locked-icon { width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+.locked-icon svg { width: 28px; height: 28px; }
+.locked-title { margin: 0; font-size: 17px; font-weight: 600; color: var(--fg); text-align: center; }
+.unlock-form { display: flex; gap: 8px; width: min(320px, calc(100vw - 32px)); }
+.unlock-form .dlg-input { flex: 1; min-width: 0; margin: 0; }
+.locked-msg { margin: 0; font-size: 13px; text-align: center; }
+.nb-switch.is-locked .nb-icon { color: var(--muted); }
+
 button.primary, button.ghost, button.danger-btn {
   height: 40px;
   padding: 0 18px;

@@ -15,6 +15,7 @@ import { exportPdf } from './pdfexport.js';
 import { recognize, backend, getApiKey, setApiKey } from './recognize.js';
 import { fileKind, openPdf, prepareImage } from './importer.js';
 import * as sync from './sync.js';
+import { makeLock, checkLock, isLocked, pickNotebook } from './lock.js';
 
 const PEN_COLORS = ['#1f2a44', '#d9534f', '#2f6fd8', '#2f9e6e', '#8a5cd1'];
 const HL_COLORS = ['#f5d33b', '#86d46b', '#6cc4f0', '#f59bc4', '#f5a65b'];
@@ -96,6 +97,15 @@ app.innerHTML = `
       <div class="empty" id="empty" hidden>
         <p class="empty-title">這個分區還沒有頁面</p>
         <button type="button" class="primary" id="empty-add">新增頁面</button>
+      </div>
+      <div class="locked" id="locked" hidden>
+        <div class="locked-icon">${icons.lock}</div>
+        <p class="locked-title" id="locked-title"></p>
+        <form class="unlock-form" id="unlock-form" autocomplete="off">
+          <input type="password" class="dlg-input" id="unlock-code" placeholder="密碼" aria-label="筆記本密碼" autocomplete="off">
+          <button class="primary">解鎖</button>
+        </form>
+        <p class="locked-msg" id="locked-msg">切換 App 或關掉螢幕後會自動再鎖上。</p>
       </div>
     </div>
   </main>
@@ -300,6 +310,19 @@ function pagesOf(scId) { return sortByOrder(state.pages.filter((p) => p.sectionI
 function renderSidebar() {
   const nb = state.notebooks.find((n) => n.id === state.notebookId);
   $('nb-name').textContent = nb ? nb.name : '';
+  const locked = isLocked(nb, unlocked);
+  $('nb-switch').classList.toggle('is-locked', locked);
+  $('add-section').disabled = locked;
+  if (locked) {
+    // 上鎖中：分區和頁面的名稱也不顯示
+    $('section-list').innerHTML = '<li class="hint">已上鎖</li>';
+    $('pages-head').textContent = '頁面';
+    $('sidebar').style.setProperty('--sc', 'var(--accent)');
+    $('page-list').innerHTML = '';
+    $('add-page').disabled = true;
+    renderSyncStatus();
+    return;
+  }
   const sections = sectionsOf(state.notebookId);
   $('section-list').innerHTML = sections.map((s) => `
     <li class="row section-row${s.id === state.sectionId ? ' on' : ''}" data-id="${s.id}" style="--sc:${s.color}">
@@ -364,14 +387,31 @@ $('page-list').addEventListener('click', (e) => {
 });
 
 $('nb-switch').addEventListener('click', (e) => {
-  const list = sortByOrder(state.notebooks);
+  const list = visibleNotebooks();
+  const cur = currentNotebook();
+  const locked = isLocked(cur, unlocked);
+  const hiddenCount = state.notebooks.filter((n) => n.hidden).length;
+  const othersVisible = state.notebooks.some((n) => n.id !== cur?.id && !n.hidden);
+  const status = (n) => [n.hidden ? '已隱藏' : '', n.lock ? (unlocked.has(n.id) ? '已解鎖' : '已上鎖') : ''].filter(Boolean).join(' · ');
   openMenu(e.currentTarget, [
-    ...list.map((n) => ({ label: n.name, check: n.id === state.notebookId, action: () => openNotebook(n.id) })),
+    ...list.map((n) => ({ label: n.name, hint: status(n), check: n.id === state.notebookId, action: () => openNotebook(n.id) })),
     { sep: true },
     { label: '新增筆記本…', action: addNotebook },
-    { label: '調整筆記本順序…', action: arrangeNotebooks, disabled: state.notebooks.length < 2 },
-    { label: '重新命名這本…', action: renameNotebook },
-    { label: '刪除這本…', danger: true, action: deleteNotebook, disabled: state.notebooks.length < 2 },
+    { label: '調整筆記本順序…', action: arrangeNotebooks, disabled: list.length < 2 },
+    { label: '重新命名這本…', action: renameNotebook, disabled: locked },
+    { sep: true },
+    cur && cur.hidden
+      ? { label: '取消隱藏這本', action: () => setHidden(cur, false) }
+      : { label: '隱藏這本', hint: othersVisible ? '不會出現在筆記本清單' : '至少要留一本沒隱藏的', action: () => setHidden(cur, true), disabled: !cur || !othersVisible },
+    cur && cur.lock
+      ? { label: '移除這本的密碼…', action: () => removeLock(cur), disabled: locked }
+      : { label: '幫這本設密碼…', hint: '打開時要輸入密碼', action: () => setLock(cur), disabled: !cur },
+    ...(hiddenCount ? [revealHidden
+      ? { label: '再次隱藏筆記本', action: lockNow }
+      : { label: `顯示隱藏的筆記本（${hiddenCount}）`, action: showHidden }] : []),
+    ...(unlocked.size ? [{ label: '立即上鎖', hint: '鎖上剛剛解鎖的筆記本', action: lockNow }] : []),
+    { sep: true },
+    { label: '刪除這本…', danger: true, action: deleteNotebook, disabled: state.notebooks.length < 2 || locked },
   ]);
 });
 
@@ -451,6 +491,8 @@ function closeDrawerIfNarrow() {
 
 // ---------- 開啟 ----------
 function openNotebook(id) {
+  const nb = state.notebooks.find((n) => n.id === id);
+  if (isLocked(nb, unlocked)) { showLocked(nb); return; }
   state.notebookId = id;
   const sections = sectionsOf(id);
   const last = prefs.last[id];
@@ -461,6 +503,8 @@ function openNotebook(id) {
 function openSection(id) {
   const sc = state.sections.find((s) => s.id === id);
   if (!sc) return;
+  const nb = state.notebooks.find((n) => n.id === sc.notebookId);
+  if (isLocked(nb, unlocked)) { showLocked(nb); return; }
   state.notebookId = sc.notebookId;
   state.sectionId = id;
   prefs.last[sc.notebookId] = id;
@@ -472,6 +516,9 @@ function openSection(id) {
 async function openPage(id) {
   const page = state.pages.find((p) => p.id === id);
   if (!page) return;
+  const sc0 = state.sections.find((s) => s.id === page.sectionId);
+  const nb0 = sc0 && state.notebooks.find((n) => n.id === sc0.notebookId);
+  if (isLocked(nb0, unlocked)) { showLocked(nb0); return; }
   await flush();
   state.pageId = id;
   state.sectionId = page.sectionId;
@@ -485,9 +532,114 @@ async function openPage(id) {
 }
 
 function showPage(page, content) {
+  $('locked').hidden = true;
   $('empty').hidden = !!page || !state.sectionId;
   editorEl.hidden = !page;
   if (page) editor.load(page, content);
+}
+
+// ---------- 隱藏、上鎖 ----------
+// unlocked、revealHidden 只存在記憶體：重新整理、切換 App 或關掉螢幕就會恢復成鎖上、隱藏
+const unlocked = new Set();
+let revealHidden = false;
+
+function currentNotebook() { return state.notebooks.find((n) => n.id === state.notebookId); }
+function visibleNotebooks() { return sortByOrder(state.notebooks).filter((n) => !n.hidden || revealHidden || n.id === state.notebookId); }
+function defaultNotebookId() { return pickNotebook(sortByOrder(state.notebooks), { unlocked, revealHidden })?.id; }
+
+async function showLocked(nb) {
+  await flush();
+  state.notebookId = nb.id;
+  state.sectionId = null;
+  state.pageId = null;
+  editorEl.hidden = true;
+  $('empty').hidden = true;
+  $('locked').hidden = false;
+  $('locked-title').textContent = `「${nb.name}」已上鎖`;
+  $('unlock-code').value = '';
+  renderSidebar();
+  if (!narrow.matches) $('unlock-code').focus({ preventScroll: true });
+}
+
+$('unlock-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const nb = currentNotebook();
+  const code = $('unlock-code').value;
+  if (!nb || !code) return;
+  if (!(await checkLock(nb.lock, code))) {
+    $('unlock-code').value = '';
+    $('unlock-code').focus();
+    toast('密碼不對。');
+    return;
+  }
+  unlocked.add(nb.id);
+  $('unlock-code').blur();
+  openNotebook(nb.id);
+});
+
+// 不在畫面上的時候（切 App、關螢幕、換分頁）全部鎖回去
+function lockNow() {
+  const had = unlocked.size || revealHidden;
+  unlocked.clear();
+  revealHidden = false;
+  const cur = currentNotebook();
+  if (cur && (cur.lock || cur.hidden)) {
+    const id = defaultNotebookId();
+    if (id) openNotebook(id);
+  } else {
+    renderSidebar();
+  }
+  return had;
+}
+window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') lockNow(); });
+
+async function showHidden() {
+  revealHidden = true;
+  toast('隱藏的筆記本會先顯示在清單裡，切換 App 或關掉螢幕後會再隱藏。');
+}
+
+async function setHidden(nb, hidden) {
+  if (hidden) nb.hidden = true; else delete nb.hidden;
+  nb.updatedAt = Date.now();
+  await store.put('notebooks', nb);
+  if (hidden) {
+    revealHidden = false;
+    toast(`已隱藏「${nb.name}」。要找回來：點筆記本名稱 › 顯示隱藏的筆記本。`);
+    openNotebook(defaultNotebookId());
+  } else {
+    renderSidebar();
+  }
+}
+
+async function setLock(nb) {
+  dlgForm.innerHTML = `
+    <h2 class="dlg-title">幫「${esc(nb.name)}」設密碼</h2>
+    <p class="dlg-msg">打開這本時要輸入密碼。切換 App、關掉螢幕或換分頁後會自動鎖上。密碼會同步到其他裝置。</p>
+    <input type="password" class="dlg-input" id="lock-a" placeholder="密碼（至少 4 個字）" autocomplete="new-password">
+    <input type="password" class="dlg-input" id="lock-b" placeholder="再輸入一次" autocomplete="new-password" style="margin-top:8px">
+    <p class="dlg-hint" style="margin-top:10px">請記好密碼，忘記的話 Folio 裡打不開這本（資料不會消失，「匯出備份」的檔案裡還有）。這是防止別人看到用的，筆記內容本身沒有加密。</p>
+    <div class="dlg-actions"><button type="button" class="ghost" id="dlg-cancel">取消</button><button class="primary" value="ok">設定密碼</button></div>`;
+  const res = await showDialog(() => ({ a: $('lock-a').value, b: $('lock-b').value }), () => $('lock-a').focus());
+  if (!res) return;
+  if ([...res.a].length < 4) { toast('密碼至少要 4 個字。'); return; }
+  if (res.a !== res.b) { toast('兩次輸入的密碼不一樣，請再設一次。'); return; }
+  nb.lock = await makeLock(res.a);
+  nb.updatedAt = Date.now();
+  await store.put('notebooks', nb);
+  unlocked.add(nb.id); // 剛設好先不鎖，離開畫面後才鎖
+  renderSidebar();
+  toast(`已幫「${nb.name}」設密碼。切換 App 或按「立即上鎖」就會鎖上。`);
+}
+
+async function removeLock(nb) {
+  const ok = await askConfirm({ title: `移除「${nb.name}」的密碼？`, message: '之後打開這本不用再輸入密碼，其他裝置也一樣。', ok: '移除密碼' });
+  if (!ok) return;
+  delete nb.lock;
+  nb.updatedAt = Date.now();
+  await store.put('notebooks', nb);
+  unlocked.delete(nb.id);
+  renderSidebar();
+  toast('已移除密碼。');
 }
 
 // ---------- 新增、改名、刪除 ----------
@@ -520,7 +672,7 @@ async function deleteNotebook() {
   const ok = await askConfirm({ title: `刪除「${nb.name}」？`, message: `裡面的 ${ids.sections.length} 個分區、${ids.pages.length} 個頁面會一起刪除，無法復原。`, ok: '刪除', danger: true });
   if (!ok) return;
   await removeIds(ids);
-  openNotebook(sortByOrder(state.notebooks)[0].id);
+  openNotebook(defaultNotebookId());
 }
 
 async function addSection() {
@@ -634,7 +786,7 @@ async function removeIds(ids) {
 // 調整筆記本順序：一個清單，每本旁邊有上移、下移，按了馬上生效
 function arrangeNotebooks() {
   const render = () => {
-    const list = sortByOrder(state.notebooks);
+    const list = visibleNotebooks();
     $('arrange-list').innerHTML = list.map((n, i) => `
       <li class="arrange-row${n.id === state.notebookId ? ' current' : ''}">
         <span class="arrange-name">${icons.book}<span>${esc(n.name)}</span></span>
@@ -651,7 +803,7 @@ function arrangeNotebooks() {
   $('arrange-list').addEventListener('click', async (e) => {
     const b = e.target.closest('[data-move]');
     if (!b || b.disabled) return;
-    await reorder('notebooks', state.notebooks, b.dataset.move, Number(b.dataset.delta));
+    await reorder('notebooks', visibleNotebooks(), b.dataset.move, Number(b.dataset.delta));
     render();
     // 移動後焦點留在同一本的按鈕上，方便連續按
     const again = $('arrange-list').querySelector(`[data-move="${b.dataset.move}"][data-delta="${b.dataset.delta}"]`);
@@ -975,6 +1127,9 @@ function showDialogChoice(read) {
 // 別台裝置的變更寫進本機之後：更新側邊欄，打開的那頁換成新內容
 async function onRemoteApplied({ structure, pages }) {
   if (structure) await reloadIndex();
+  // 別台裝置剛幫這本設了密碼
+  const cur = currentNotebook();
+  if (state.pageId && isLocked(cur, unlocked)) { showLocked(cur); return; }
   if (state.pageId && pages.has(state.pageId)) {
     const page = state.pages.find((p) => p.id === state.pageId);
     const content = await store.getContent(state.pageId);
@@ -994,9 +1149,9 @@ async function reloadIndex() {
     toast('這一頁在另一台裝置上被刪除了。');
     state.pageId = null;
     const sc = state.sections.find((x) => x.id === state.sectionId);
-    if (sc) openSection(sc.id); else if (state.notebooks.length) openNotebook(sortByOrder(state.notebooks)[0].id); else showPage(null);
+    if (sc) openSection(sc.id); else if (state.notebooks.length) openNotebook(defaultNotebookId()); else showPage(null);
   } else if (state.notebookId && !state.notebooks.some((n) => n.id === state.notebookId) && state.notebooks.length) {
-    openNotebook(sortByOrder(state.notebooks)[0].id);
+    openNotebook(defaultNotebookId());
   }
 }
 
@@ -1007,8 +1162,7 @@ async function reloadFromStore() {
     // 雲端是空的又選了取代：放一份示範內容，不要留下空白畫面
     Object.assign(state, await store.init());
   }
-  const last = state.pages.find((p) => p.id === prefs.lastPage);
-  if (last) openPage(last.id); else openNotebook(sortByOrder(state.notebooks)[0].id);
+  openLast();
 }
 
 // ---------- 插入 PDF、圖片 ----------
@@ -1432,13 +1586,19 @@ async function boot() {
   applySidebar();
   editor.setTool(prefs.tool);
   renderTools();
-  const lastPage = state.pages.find((p) => p.id === prefs.lastPage);
-  if (lastPage) {
-    const sc = state.sections.find((s) => s.id === lastPage.sectionId);
-    state.notebookId = sc.notebookId;
-    openPage(lastPage.id);
+  openLast();
+}
+
+// 打開上次看的那頁；那本已上鎖或隱藏的話改開別本（上班打開 App 時不會直接出現）
+function openLast() {
+  const last = state.pages.find((p) => p.id === prefs.lastPage);
+  const sc = last && state.sections.find((s) => s.id === last.sectionId);
+  const nb = sc && state.notebooks.find((n) => n.id === sc.notebookId);
+  if (nb && !nb.hidden && !nb.lock) {
+    state.notebookId = nb.id;
+    openPage(last.id);
   } else {
-    openNotebook(sortByOrder(state.notebooks)[0].id);
+    openNotebook(defaultNotebookId());
   }
 }
 
