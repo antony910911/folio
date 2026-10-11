@@ -84,7 +84,9 @@ export function createEditor(viewport, hooks = {}) {
       <button type="button" data-mm="fold">收合</button>
       <button type="button" data-mm="delete" class="danger" title="刪除 (Delete)">刪除</button>
     </div>
-    <div class="eraser-cursor" hidden></div>`;
+    <div class="eraser-cursor" hidden></div>
+    <div class="scrollbar v" aria-hidden="true"><div class="thumb"></div></div>
+    <div class="scrollbar h" aria-hidden="true"><div class="thumb"></div></div>`;
 
   const surface = viewport.querySelector('.surface');
   const svg = viewport.querySelector('.ink');
@@ -141,8 +143,82 @@ export function createEditor(viewport, hooks = {}) {
     view.y = Math.min(maxY, Math.max(minY, view.y));
   }
 
+  // ---------- 捲軸：拖曳把手捲動，點軌道往前／往後翻一個畫面 ----------
+  const bars = {
+    y: { el: viewport.querySelector('.scrollbar.v'), size: 'height', len: () => surfaceSize.h },
+    x: { el: viewport.querySelector('.scrollbar.h'), size: 'width', len: () => surfaceSize.w },
+  };
+  const MARGIN = 48;
+  function barGeom(axis) {
+    const b = bars[axis];
+    const r = viewport.getBoundingClientRect();
+    const visible = r[b.size];
+    const max = MARGIN;
+    const min = Math.min(max, visible - b.len() * view.z - MARGIN);
+    const track = b.el.getBoundingClientRect()[b.size];
+    const thumb = Math.min(track, Math.max(40, track * visible / (visible + (max - min))));
+    return { visible, max, min, track, thumb };
+  }
+  function updateScrollbars() {
+    for (const axis of ['y', 'x']) {
+      const b = bars[axis];
+      const g = barGeom(axis);
+      const off = g.max - g.min < 2;
+      b.el.classList.toggle('off', off);
+      if (off) continue;
+      const pos = (g.max - view[axis]) / (g.max - g.min) * (g.track - g.thumb);
+      const t = b.el.firstElementChild.style;
+      t[b.size] = g.thumb + 'px';
+      t.transform = axis === 'y' ? `translateY(${pos}px)` : `translateX(${pos}px)`;
+    }
+  }
+  let barFade = null;
+  function flashScrollbars() {
+    viewport.classList.add('scrolling');
+    clearTimeout(barFade);
+    barFade = setTimeout(() => viewport.classList.remove('scrolling'), 900);
+  }
+  for (const axis of ['y', 'x']) {
+    const b = bars[axis];
+    const thumbEl = b.el.firstElementChild;
+    const client = (e) => (axis === 'y' ? e.clientY : e.clientX);
+    b.el.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const g = barGeom(axis);
+      if (e.target === thumbEl) {
+        b.el.setPointerCapture(e.pointerId);
+        b.el.classList.add('active');
+        const start = client(e);
+        const startView = view[axis];
+        const ratio = (g.max - g.min) / Math.max(1, g.track - g.thumb);
+        const move = (ev) => { ev.stopPropagation(); view[axis] = startView - (client(ev) - start) * ratio; applyView(); };
+        const up = (ev) => {
+          ev.stopPropagation();
+          b.el.classList.remove('active');
+          b.el.removeEventListener('pointermove', move);
+          b.el.removeEventListener('pointerup', up);
+          b.el.removeEventListener('pointercancel', up);
+        };
+        b.el.addEventListener('pointermove', move);
+        b.el.addEventListener('pointerup', up);
+        b.el.addEventListener('pointercancel', up);
+      } else {
+        // 點軌道：往點的方向翻一個畫面
+        const tr = thumbEl.getBoundingClientRect();
+        const before = client(e) < (axis === 'y' ? tr.top : tr.left);
+        view[axis] += (before ? 1 : -1) * g.visible * 0.85;
+        applyView();
+      }
+    });
+    for (const type of ['pointermove', 'pointerup', 'pointercancel']) b.el.addEventListener(type, (e) => e.stopPropagation());
+  }
+  new ResizeObserver(() => updateScrollbars()).observe(viewport);
+
   function applyView() {
     clampView();
+    updateScrollbars();
+    flashScrollbars();
     surface.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.z})`;
     surface.style.setProperty('--z', view.z);
     if (page) views.set(page.id, { ...view });
@@ -838,7 +914,7 @@ export function createEditor(viewport, hooks = {}) {
   }
 
   viewport.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('.selbar, .mmbar')) return;
+    if (e.target.closest('.selbar, .mmbar, .scrollbar')) return;
     if (mm) clearNode();
     const onText = e.target.closest('.textbox, .page-head');
     if (e.pointerType === 'pen' && !prefs.penOnly) {

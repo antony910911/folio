@@ -1033,3 +1033,31 @@ button.danger-text { color: var(--danger); }
 .pdf-page small { color: var(--muted); font-size: 12px; flex: none; }
 .pdf-page.current small { color: var(--accent); }
 .pdf-opt { margin-bottom: 14px; }
+
+/* 捲軸：頁面可以拖曳捲動（觸控區比看得到的把手寬） */
+.scrollbar { position: absolute; z-index: 6; touch-action: none; }
+.scrollbar.v { top: 6px; bottom: 22px; right: 0; width: 20px; }
+.scrollbar.h { left: 6px; right: 22px; bottom: env(safe-area-inset-bottom, 0px); height: 20px; }
+.scrollbar.off { display: none; }
+.scrollbar .thumb {
+  position: absolute;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--fg) 32%, transparent);
+  opacity: .55;
+  transition: opacity .2s, width .15s, height .15s, background .15s;
+}
+.scrollbar.v .thumb { top: 0; right: 4px; width: 6px; }
+.scrollbar.h .thumb { left: 0; bottom: 4px; height: 6px; }
+.viewport.scrolling .scrollbar .thumb, .scrollbar:hover .thumb { opacity: 1; }
+.scrollbar.v:hover .thumb, .scrollbar.v.active .thumb { width: 10px; }
+.scrollbar.h:hover .thumb, .scrollbar.h.active .thumb { height: 10px; }
+.scrollbar.active .thumb { opacity: 1; background: color-mix(in srgb, var(--accent) 70%, transparent); }
+@media (pointer: coarse) {
+  /* 平板、手機：把手粗一點比較好抓 */
+  .scrollbar.v { width: 28px; }
+  .scrollbar.h { height: 28px; }
+  .scrollbar.v .thumb { width: 8px; }
+  .scrollbar.h .thumb { height: 8px; }
+  .scrollbar.v.active .thumb { width: 12px; }
+  .scrollbar.h.active .thumb { height: 12px; }
+}
