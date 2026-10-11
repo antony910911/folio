@@ -71,7 +71,9 @@ app.innerHTML = `
         <ul class="list" id="page-list"></ul>
         <button type="button" class="add-page" id="add-page">${icons.plus}<span>新增頁面</span></button>
       </nav>
+      <div class="resizer" id="resize-cols" role="separator" aria-orientation="vertical" aria-label="調整分區欄寬度" title="拖曳調整寬度，點兩下還原"></div>
     </div>
+    <div class="resizer edge" id="resize-side" role="separator" aria-orientation="vertical" aria-label="調整側邊欄寬度" title="拖曳調整寬度，點兩下還原"></div>
     <button type="button" class="side-foot" id="side-foot"></button>
   </aside>
   <div class="scrim" id="scrim"></div>
@@ -389,6 +391,60 @@ function isSidebarOpen() { return document.body.classList.contains('sidebar-open
 function applySidebar() {
   document.body.classList.toggle('sidebar-open', !!prefs.sidebar);
 }
+// ---------- 側邊欄寬度：拖曳分隔線調整，點兩下還原 ----------
+const SIDE_W = { def: 380, min: 260, max: 720 };
+const SEC_W = { def: 150, min: 90, minPages: 130 };
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+function applyWidths() {
+  const root = document.documentElement.style;
+  const side = clamp(prefs.sideW || SIDE_W.def, SIDE_W.min, SIDE_W.max);
+  // 窄螢幕是抽屜，最多佔畫面 88%
+  root.setProperty('--sidebar-w', narrow.matches ? `min(${side}px, 88vw)` : `${side}px`);
+  const sideNow = $('sidebar').getBoundingClientRect().width || side;
+  const sec = clamp(prefs.secW || (narrow.matches ? 140 : SEC_W.def), SEC_W.min, Math.max(SEC_W.min, sideNow - SEC_W.minPages));
+  root.setProperty('--sec-w', `${sec}px`);
+}
+function dragResize(handle, onMove) {
+  handle.addEventListener('pointerdown', (e) => {
+    if (e.button > 0) return;
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    document.body.classList.add('resizing');
+    handle.classList.add('active');
+    const startX = e.clientX;
+    const start = onMove.start();
+    const move = (ev) => onMove.move(start + ev.clientX - startX);
+    const up = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
+      document.body.classList.remove('resizing');
+      handle.classList.remove('active');
+      savePrefs();
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+  });
+}
+dragResize($('resize-cols'), {
+  start: () => $('sidebar').querySelector('.col.sections').getBoundingClientRect().width,
+  move: (w) => { prefs.secW = Math.round(w); applyWidths(); },
+});
+dragResize($('resize-side'), {
+  start: () => $('sidebar').getBoundingClientRect().width,
+  move: (w) => {
+    prefs.sideW = Math.round(clamp(w, SIDE_W.min, SIDE_W.max));
+    // 側邊欄縮窄時分區欄跟著縮，頁面欄至少留一點寬度
+    if (prefs.secW) prefs.secW = Math.min(prefs.secW, prefs.sideW - SEC_W.minPages);
+    applyWidths();
+  },
+});
+$('resize-cols').addEventListener('dblclick', () => { delete prefs.secW; savePrefs(); applyWidths(); });
+$('resize-side').addEventListener('dblclick', () => { delete prefs.sideW; delete prefs.secW; savePrefs(); applyWidths(); });
+narrow.addEventListener('change', applyWidths);
+applyWidths();
+
 function closeDrawerIfNarrow() {
   if (narrow.matches && prefs.sidebar) { prefs.sidebar = false; savePrefs(); applySidebar(); }
 }

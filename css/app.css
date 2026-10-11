@@ -95,6 +95,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   padding-left: env(safe-area-inset-left, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   min-height: 0;
+  position: relative;
 }
 body.sidebar-open .sidebar { margin-left: 0; }
 .scrim { display: none; }
@@ -120,9 +121,38 @@ body.sidebar-open .sidebar { margin-left: 0; }
 .cols {
   flex: 1;
   display: grid;
-  grid-template-columns: 150px minmax(0, 1fr);
+  grid-template-columns: var(--sec-w, 150px) minmax(0, 1fr);
   min-height: 0;
+  position: relative;
 }
+
+/* 分隔線：拖曳調整寬度（觸控區比看得到的線寬，手指和 Pencil 都好抓） */
+.resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--sec-w, 150px) - 8px);
+  width: 16px;
+  z-index: 5;
+  cursor: col-resize;
+  touch-action: none;
+}
+.resizer.edge { left: auto; right: -8px; z-index: 31; }
+.resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 7px;
+  width: 2px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity .15s;
+}
+.resizer:hover::after, .resizer.active::after { opacity: .6; }
+body.resizing { cursor: col-resize; user-select: none; -webkit-user-select: none; }
+body.resizing .sidebar { transition: none; }
+body:not(.sidebar-open) .resizer.edge { display: none; }
 .col { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .col.pages {
   background: color-mix(in srgb, var(--sc) 7%, var(--chrome));
@@ -633,7 +663,7 @@ button.ghost { background: color-mix(in srgb, var(--fg) 7%, transparent); }
     padding-top: env(safe-area-inset-top, 0px);
     box-shadow: var(--shadow);
   }
-  .cols { grid-template-columns: 140px minmax(0, 1fr); }
+  .cols { grid-template-columns: var(--sec-w, 140px) minmax(0, 1fr); }
   body.sidebar-open .scrim { display: block; position: fixed; inset: 0; z-index: 29; background: rgba(10, 14, 22, .3); }
   .toolbar { gap: 2px; padding: 0 6px; }
   .tool-opts { gap: 4px; padding-left: 2px; }
