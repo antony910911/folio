@@ -1139,3 +1139,6 @@ button.danger-text { color: var(--danger); }
 .viewport.read-only { cursor: grab; }
 .viewport.read-only .tb-body { cursor: inherit; -webkit-user-select: none; user-select: none; }
 body.view-locked #tools, body.view-locked #tool-opts { opacity: .45; }
+
+/* 拖曳捲動時讓頁面在獨立圖層上移動，比較順 */
+.viewport.panning .surface { will-change: transform; }

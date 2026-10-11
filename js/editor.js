@@ -132,8 +132,15 @@ export function createEditor(viewport, hooks = {}) {
     return { x: (cx - r.left - view.x) / view.z, y: (cy - r.top - view.y) / view.z };
   }
 
+  // 視窗大小：拖曳時每一下都去量會拖慢畫面，改成大小改變時才更新
+  let vpSize = null;
+  function vpRect() {
+    if (!vpSize) { const r = viewport.getBoundingClientRect(); vpSize = { width: r.width, height: r.height }; }
+    return vpSize;
+  }
+
   function clampView() {
-    const r = viewport.getBoundingClientRect();
+    const r = vpRect();
     const margin = 48;
     const maxX = margin;
     const maxY = margin;
@@ -151,11 +158,11 @@ export function createEditor(viewport, hooks = {}) {
   const MARGIN = 48;
   function barGeom(axis) {
     const b = bars[axis];
-    const r = viewport.getBoundingClientRect();
-    const visible = r[b.size];
+    const visible = vpRect()[b.size];
     const max = MARGIN;
     const min = Math.min(max, visible - b.len() * view.z - MARGIN);
-    const track = b.el.getBoundingClientRect()[b.size];
+    if (!b.track || !vpSize) b.track = b.el.getBoundingClientRect()[b.size]; // 軌道長度也只在大小改變時量
+    const track = b.track;
     const thumb = Math.min(track, Math.max(40, track * visible / (visible + (max - min))));
     return { visible, max, min, track, thumb };
   }
@@ -213,18 +220,75 @@ export function createEditor(viewport, hooks = {}) {
     });
     for (const type of ['pointermove', 'pointerup', 'pointercancel']) b.el.addEventListener(type, (e) => e.stopPropagation());
   }
-  new ResizeObserver(() => updateScrollbars()).observe(viewport);
+  new ResizeObserver(() => { vpSize = null; bars.x.track = bars.y.track = 0; updateScrollbars(); }).observe(viewport);
 
+  let lastZ = null;
   function applyView() {
     clampView();
+    surface.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.z})`;
+    if (view.z !== lastZ) {
+      // --z 會讓整頁的樣式重算，只有縮放比例真的變了才設定
+      lastZ = view.z;
+      surface.style.setProperty('--z', view.z);
+      emit('onZoom', view.z);
+    }
     updateScrollbars();
     flashScrollbars();
-    surface.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.z})`;
-    surface.style.setProperty('--z', view.z);
     if (page) views.set(page.id, { ...view });
     positionSelbar();
     positionMmbar();
-    emit('onZoom', view.z);
+  }
+
+  // 拖曳時：跟著螢幕更新的節奏畫（一個畫面只更新一次）
+  let viewFrame = 0;
+  function scheduleView() {
+    if (viewFrame) return;
+    viewFrame = requestAnimationFrame(() => { viewFrame = 0; applyView(); });
+  }
+
+  // ---------- 慣性捲動：放開後順著速度繼續滑，慢慢停下（和 iPhone 一樣的減速） ----------
+  let inertia = 0;
+  function stopInertia() {
+    if (inertia) cancelAnimationFrame(inertia);
+    inertia = 0;
+  }
+  function trackPan(g, e) {
+    const now = e.timeStamp || performance.now();
+    g.samples = (g.samples || []).filter((p) => now - p.t < 100);
+    g.samples.push({ t: now, x: e.clientX, y: e.clientY });
+  }
+  function startInertia(g) {
+    const pts = g.samples || [];
+    if (pts.length < 2) return;
+    const a = pts[0];
+    const b = pts[pts.length - 1];
+    const dt = b.t - a.t;
+    if (dt < 10 || performance.now() - b.t > 60) return; // 停住才放開的話不要滑
+    let vx = (b.x - a.x) / dt; // px/ms
+    let vy = (b.y - a.y) / dt;
+    const max = 6;
+    vx = Math.max(-max, Math.min(max, vx));
+    vy = Math.max(-max, Math.min(max, vy));
+    if (Math.hypot(vx, vy) < 0.15) return;
+    let last = performance.now();
+    const step = (now) => {
+      const ms = Math.min(48, now - last);
+      last = now;
+      const decay = Math.pow(0.998, ms); // iOS 預設的減速率
+      const bx = view.x;
+      const by = view.y;
+      view.x += vx * ms;
+      view.y += vy * ms;
+      applyView();
+      // 撞到邊就停住那個方向
+      if (Math.abs(view.x - (bx + vx * ms)) > 0.5) vx = 0;
+      if (Math.abs(view.y - (by + vy * ms)) > 0.5) vy = 0;
+      vx *= decay;
+      vy *= decay;
+      if (Math.hypot(vx, vy) < 0.02) { inertia = 0; return; }
+      inertia = requestAnimationFrame(step);
+    };
+    inertia = requestAnimationFrame(step);
   }
 
   function zoomAt(cx, cy, z) {
@@ -928,6 +992,7 @@ export function createEditor(viewport, hooks = {}) {
 
   // ---------- 鎖定畫面（只能看）：任何手指、筆、滑鼠都只會捲動和縮放，不會碰到內容 ----------
   let readOnly = false;
+  viewport.addEventListener('pointerdown', () => stopInertia(), true); // 手指再碰到就停下來
   viewport.addEventListener('pointerdown', (e) => {
     if (!readOnly || e.target.closest('.scrollbar')) return;
     e.stopPropagation(); // 文字框、心智圖、清單圓圈自己的處理都不要跑
@@ -1039,7 +1104,8 @@ export function createEditor(viewport, hooks = {}) {
     if (g.kind === 'pan') {
       view.x = g.start.view.x + (e.clientX - g.start.cx);
       view.y = g.start.view.y + (e.clientY - g.start.cy);
-      applyView();
+      trackPan(g, e);
+      scheduleView();
     } else if (g.kind === 'stroke') {
       extendStroke(g, e);
     } else if (g.kind === 'erase') {
@@ -1092,6 +1158,11 @@ export function createEditor(viewport, hooks = {}) {
     const g = gesture;
     gesture = null;
     viewport.classList.remove('panning');
+    if (g.kind === 'pan' && !cancelled) {
+      if (viewFrame) { cancelAnimationFrame(viewFrame); viewFrame = 0; applyView(); }
+      trackPan(g, e);
+      startInertia(g);
+    }
     eraserCursor.hidden = tool !== 'eraser' || e.pointerType === 'touch';
     if (cancelled) {
       cancelGesture(g);
@@ -1148,6 +1219,7 @@ export function createEditor(viewport, hooks = {}) {
 
   viewport.addEventListener('wheel', (e) => {
     e.preventDefault();
+    stopInertia();
     if (e.ctrlKey || e.metaKey) {
       zoomAt(e.clientX, e.clientY, view.z * Math.exp(-e.deltaY * 0.01));
     } else {
@@ -1173,7 +1245,7 @@ export function createEditor(viewport, hooks = {}) {
   window.addEventListener('keyup', (e) => {
     if (e.code === 'Space') { spaceDown = false; viewport.classList.remove('can-pan'); }
   });
-  window.addEventListener('resize', () => applyView());
+  window.addEventListener('resize', () => { vpSize = null; bars.x.track = bars.y.track = 0; applyView(); });
 
   // ---------- 心智圖 ----------
   function mapItem() {
