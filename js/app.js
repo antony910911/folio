@@ -865,7 +865,7 @@ async function openSyncSettings() {
     toast({
       unauthorized: '同步密碼和 Cloudflare 上的 SYNC_TOKEN 不一樣。可以勾「顯示密碼」檢查大小寫。',
       offline: '連不上同步伺服器。請確認網路，或是不是在 Folio 自己的網址（workers.dev）開啟的。',
-      not_configured: 'Cloudflare 上還沒有設定 SYNC_TOKEN，或設定後還沒按 Deploy。',
+      not_configured: 'Cloudflare 上的 SYNC_TOKEN 不見了。請到 Variables and Secrets 重新新增，類型選「Secret」（設成 Text 的話，每次更新都可能被清掉）。',
     }[res.code] || `連線失敗（${res.code}），請稍後再試。`);
     return;
   }

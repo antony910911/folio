@@ -186,7 +186,7 @@ export async function syncNow() {
   } catch (e) {
     if (e.code === 'offline') setStatus('offline');
     else if (e.code === 'unauthorized') setStatus('unauthorized');
-    else if (e.code === 'not_configured') setStatus('error', '伺服器還沒有設定同步密碼（SYNC_TOKEN）。');
+    else if (e.code === 'not_configured') setStatus('error', '伺服器上的同步密碼（SYNC_TOKEN）不見了，請在 Cloudflare 重新設定成 Secret。');
     else if (e.code === 'busy') { setStatus('syncing'); setTimeout(syncNow, 1500); }
     else { console.error(e); setStatus('error', e.message || '同步失敗'); }
   } finally {

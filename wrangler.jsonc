@@ -14,5 +14,7 @@
     "bindings": [{ "name": "LIBRARY", "class_name": "Library" }]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Library"] }],
-  "observability": { "enabled": true }
+  "observability": { "enabled": true },
+  // 部署時保留後台設定的變數。沒有這行的話，SYNC_TOKEN 如果設成一般的 Text 變數，每次推到 GitHub 自動部署都會被清掉
+  "keep_vars": true
 }
