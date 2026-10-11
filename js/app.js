@@ -297,7 +297,7 @@ $('more').addEventListener('click', (e) => {
 });
 
 // 版本和字型狀態：各台裝置版面對不起來時，先確認是不是都更新到同一版
-const APP_VERSION = 'v16';
+const APP_VERSION = 'v17';
 function versionLine() {
   const font = !document.fonts || !document.fonts.check ? '' : document.fonts.check('16px "Noto Sans TC"', '筆記')
     ? '筆記字型已載入' : '筆記字型還沒載入（正在用系統字型，換行可能和其他裝置不同）';
@@ -1611,6 +1611,12 @@ function openLast() {
 }
 
 boot();
+
+// iOS 的兩指捏合會把整個 App 放大（不管 user-scalable=no），放大後捲軸和工具列會跑出畫面。
+// 筆記頁面的縮放是編輯器自己處理的，這裡只擋掉整頁縮放
+for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+  document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+}
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').then((reg) => {

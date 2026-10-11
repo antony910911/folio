@@ -63,6 +63,9 @@
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
+/* iOS 不理會 user-scalable=no：擋掉整個 App 被捏合放大（放大後捲軸會跑到畫面外）。
+   筆記頁面自己的縮放不受影響 */
+html, body { touch-action: pan-x pan-y; }
 body {
   margin: 0;
   background: var(--desk);
@@ -701,6 +704,8 @@ button.ghost { background: color-mix(in srgb, var(--fg) 7%, transparent); }
   .tool-opts { gap: 4px; padding-left: 2px; }
 }
 @media (max-width: 560px) {
+  /* 手機上工具列比螢幕寬：「⋯」固定在右邊，不用把工具列滑到底才找得到 */
+  #more { position: sticky; right: 0; flex: none; background: var(--chrome); box-shadow: -10px 0 10px -4px var(--chrome); }
   .sizes { display: none; }
   .swatch { width: 28px; }
 }
@@ -1070,7 +1075,7 @@ button.danger-text { color: var(--danger); }
 
 /* 捲軸：頁面可以拖曳捲動（觸控區比看得到的把手寬） */
 .scrollbar { position: absolute; z-index: 6; touch-action: none; }
-.scrollbar.v { top: 6px; bottom: 22px; right: 0; width: 20px; }
+.scrollbar.v { top: 6px; bottom: 22px; right: env(safe-area-inset-right, 0px); width: 20px; }
 .scrollbar.h { left: 6px; right: 22px; bottom: env(safe-area-inset-bottom, 0px); height: 20px; }
 .scrollbar.off { display: none; }
 .scrollbar .thumb {
@@ -1087,7 +1092,8 @@ button.danger-text { color: var(--danger); }
 .scrollbar.h:hover .thumb, .scrollbar.h.active .thumb { height: 10px; }
 .scrollbar.active .thumb { opacity: 1; background: color-mix(in srgb, var(--accent) 70%, transparent); }
 @media (pointer: coarse) {
-  /* 平板、手機：把手粗一點比較好抓 */
+  /* 平板、手機：把手粗一點、顏色深一點，比較好找也好抓 */
+  .scrollbar .thumb { opacity: .85; background: color-mix(in srgb, var(--fg) 40%, transparent); }
   .scrollbar.v { width: 28px; }
   .scrollbar.h { height: 28px; }
   .scrollbar.v .thumb { width: 8px; }
