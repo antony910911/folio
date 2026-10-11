@@ -712,8 +712,12 @@ export function createEditor(viewport, hooks = {}) {
   textLayer.addEventListener('focusout', (e) => {
     const body = e.target.closest && e.target.closest('.tb-body');
     if (!body) return;
-    const clean = sanitizeHtml(body.innerHTML);
-    if (clean !== body.innerHTML) body.innerHTML = clean;
+    // 等這一下點擊處理完再換，點擊途中改畫面會讓 iOS 吃掉那一下點擊
+    setTimeout(() => {
+      if (body.contains(document.activeElement) || !body.isConnected) return;
+      const clean = sanitizeHtml(body.innerHTML);
+      if (clean !== body.innerHTML) body.innerHTML = clean;
+    }, 400);
   });
 
   textLayer.addEventListener('keydown', (e) => {

@@ -297,7 +297,7 @@ $('more').addEventListener('click', (e) => {
 });
 
 // 版本和字型狀態：各台裝置版面對不起來時，先確認是不是都更新到同一版
-const APP_VERSION = 'v17';
+const APP_VERSION = 'v18';
 function versionLine() {
   const font = !document.fonts || !document.fonts.check ? '' : document.fonts.check('16px "Noto Sans TC"', '筆記')
     ? '筆記字型已載入' : '筆記字型還沒載入（正在用系統字型，換行可能和其他裝置不同）';
@@ -380,18 +380,40 @@ function updatePageRow(page) {
   row.querySelector('.row-date').textContent = shortDate(page.updatedAt);
 }
 
-$('section-list').addEventListener('click', (e) => {
-  const open = e.target.closest('[data-open-section]');
-  const menu = e.target.closest('[data-section-menu]');
-  if (open) openSection(open.dataset.openSection);
+// 側邊欄的點擊：手指和 Pencil 在放開的那一下就算數。
+// iOS 有時會把第一下當成「滑鼠移過去」而不送出 click，變成要點兩下才打得開
+function onTap(el, handler) {
+  let down = null;
+  let swallowUntil = 0;
+  el.addEventListener('pointerdown', (e) => {
+    down = e.pointerType === 'mouse' ? null : { id: e.pointerId, x: e.clientX, y: e.clientY, target: e.target };
+  });
+  el.addEventListener('pointercancel', () => { down = null; });
+  el.addEventListener('pointerup', (e) => {
+    const d = down;
+    down = null;
+    if (!d || d.id !== e.pointerId || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 10) return;
+    swallowUntil = Date.now() + 700; // 之後瀏覽器補送的 click 不要再處理一次
+    handler(d.target);
+  });
+  el.addEventListener('click', (e) => {
+    if (Date.now() < swallowUntil) return;
+    handler(e.target);
+  });
+}
+
+onTap($('section-list'), (target) => {
+  const open = target.closest('[data-open-section]');
+  const menu = target.closest('[data-section-menu]');
   if (menu) sectionMenu(menu, menu.dataset.sectionMenu);
+  else if (open) openSection(open.dataset.openSection);
 });
 
-$('page-list').addEventListener('click', (e) => {
-  const open = e.target.closest('[data-open-page]');
-  const menu = e.target.closest('[data-page-menu]');
-  if (open) { openPage(open.dataset.openPage); closeDrawerIfNarrow(); }
+onTap($('page-list'), (target) => {
+  const open = target.closest('[data-open-page]');
+  const menu = target.closest('[data-page-menu]');
   if (menu) pageMenu(menu, menu.dataset.pageMenu);
+  else if (open) { openPage(open.dataset.openPage); closeDrawerIfNarrow(); }
 });
 
 $('nb-switch').addEventListener('click', (e) => {

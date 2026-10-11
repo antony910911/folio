@@ -154,7 +154,8 @@ body.sidebar-open .sidebar { margin-left: 0; }
   opacity: 0;
   transition: opacity .15s;
 }
-.resizer:hover::after, .resizer.active::after { opacity: .6; }
+.resizer.active::after { opacity: .6; }
+@media (hover: hover) and (pointer: fine) { .resizer:hover::after { opacity: .6; } }
 body.resizing { cursor: col-resize; user-select: none; -webkit-user-select: none; }
 body.resizing .sidebar { transition: none; }
 body:not(.sidebar-open) .resizer.edge { display: none; }
@@ -209,10 +210,13 @@ body:not(.sidebar-open) .resizer.edge { display: none; }
   cursor: pointer;
 }
 .row-more svg { width: 18px; height: 18px; }
-.row:hover .row-more, .row.on .row-more, .row-more:focus-visible { opacity: 1; }
-@media (hover: none) { .row.on .row-more { opacity: 1; } }
-.row-more:hover { background: color-mix(in srgb, var(--fg) 8%, transparent); }
-.row:hover { background: color-mix(in srgb, var(--fg) 5%, transparent); }
+/* 滑鼠移過去才出現的效果只給有滑鼠的裝置，iPad、iPhone 上才不會變成要點兩下 */
+.row.on .row-more, .row-more:focus-visible { opacity: 1; }
+@media (hover: hover) and (pointer: fine) {
+  .row:hover .row-more { opacity: 1; }
+  .row-more:hover { background: color-mix(in srgb, var(--fg) 8%, transparent); }
+  .row:hover { background: color-mix(in srgb, var(--fg) 5%, transparent); }
+}
 
 .section-row .tab { width: 4px; height: 20px; border-radius: 2px; background: var(--sc); flex: none; }
 .section-row.on { background: color-mix(in srgb, var(--sc) 16%, transparent); }
@@ -532,13 +536,15 @@ button.ghost { background: color-mix(in srgb, var(--fg) 7%, transparent); }
   border-radius: 0 0 4px 4px;
   cursor: text;
 }
-.viewport:not(.mode-draw) .textbox:hover .tb-body,
 .textbox.editing .tb-body,
 .textbox.selected .tb-body { border-color: #ccd3de; }
-.viewport:not(.mode-draw) .textbox:hover .tb-handle,
-.viewport:not(.mode-draw) .textbox:hover .tb-resize,
 .textbox.editing .tb-handle,
 .textbox.editing .tb-resize { opacity: 1; }
+@media (hover: hover) and (pointer: fine) {
+  .viewport:not(.mode-draw) .textbox:hover .tb-body { border-color: #ccd3de; }
+  .viewport:not(.mode-draw) .textbox:hover .tb-handle,
+  .viewport:not(.mode-draw) .textbox:hover .tb-resize { opacity: 1; }
+}
 @media (hover: none) {
   .viewport:not(.mode-draw) .textbox .tb-handle { opacity: .55; }
 }
