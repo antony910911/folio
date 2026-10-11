@@ -293,8 +293,16 @@ $('more').addEventListener('click', (e) => {
         ],
       },
     ];
-  });
+  }, versionLine);
 });
+
+// 版本和字型狀態：各台裝置版面對不起來時，先確認是不是都更新到同一版
+const APP_VERSION = 'v16';
+function versionLine() {
+  const font = !document.fonts || !document.fonts.check ? '' : document.fonts.check('16px "Noto Sans TC"', '筆記')
+    ? '筆記字型已載入' : '筆記字型還沒載入（正在用系統字型，換行可能和其他裝置不同）';
+  return `Folio ${APP_VERSION}${font ? ' · ' + font : ''}`;
+}
 
 function togglePenOnly() {
   prefs.penOnly = !prefs.penOnly;
@@ -1409,7 +1417,7 @@ panel.hidden = true;
 document.body.appendChild(panel);
 let panelCleanup = null;
 
-function openPanel(anchor, build) {
+function openPanel(anchor, build, foot) {
   closeMenu();
   closePanel();
   let groups = [];
@@ -1425,7 +1433,7 @@ function openPanel(anchor, build) {
             ${t.sub ? `<span class="tile-sub">${esc(t.sub)}</span>` : ''}
           </button>`).join('')}
         </div>
-      </section>`).join('');
+      </section>`).join('') + (foot ? `<p class="panel-foot">${esc(foot())}</p>` : '');
   };
   render();
   panel.onclick = (e) => {
@@ -1605,5 +1613,18 @@ function openLast() {
 boot();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  navigator.serviceWorker.register('sw.js').catch(() => { /* 預覽環境不支援，不影響使用 */ });
+  navigator.serviceWorker.register('sw.js').then((reg) => {
+    // iPad 上的 App 常常只是從背景叫回來、不會重新開：回到前景時順便檢查有沒有新版
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+  }).catch(() => { /* 預覽環境不支援，不影響使用 */ });
+  // 新版裝好了：先存檔再重新載入，各台裝置才會用同一版（同樣的字型和排版）
+  let reloading = false;
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', async () => {
+    if (!hadController || reloading) return;
+    reloading = true;
+    const reload = async () => { await flush(); location.reload(); };
+    if (document.visibilityState === 'hidden' || !editor.isBusy()) reload();
+    else toastAction('Folio 有新版本。', '重新載入', reload);
+  });
 }

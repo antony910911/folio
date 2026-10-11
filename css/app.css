@@ -513,6 +513,13 @@ button.ghost { background: color-mix(in srgb, var(--fg) 7%, transparent); }
   font-family: var(--note-font);
   font-size: 16px;
   line-height: 1.6;
+  /* 把各版本瀏覽器預設不同的排版功能固定下來（新版 Safari 會在中英文之間自動加空隙、擠壓標點），
+     不同裝置的換行位置才會一樣 */
+  text-autospace: no-autospace;
+  text-spacing-trim: space-all;
+  font-kerning: normal;
+  font-synthesis: weight style;
+  text-rendering: auto;
   color: #1d2330;
   outline: none;
   word-break: break-word;
@@ -808,6 +815,8 @@ button.ghost { background: color-mix(in srgb, var(--fg) 7%, transparent); }
   background: #ffffff;
   color: #1d2330;
   font: 15px/1.4 var(--note-font);
+  text-autospace: no-autospace;
+  text-spacing-trim: space-all;
   white-space: pre-wrap;
   word-break: break-word;
   cursor: pointer;
@@ -1086,3 +1095,5 @@ button.danger-text { color: var(--danger); }
   .scrollbar.v.active .thumb { width: 12px; }
   .scrollbar.h.active .thumb { height: 12px; }
 }
+
+.panel-foot { margin: 4px 4px 0; font-size: 11.5px; color: var(--muted); text-align: center; }

@@ -601,7 +601,7 @@ export function createEditor(viewport, hooks = {}) {
         list.insertBefore(li, firstDone || null);
       }
     }
-    it.html = body.innerHTML;
+    it.html = sanitizeHtml(body.innerHTML);
     if (!editing) pushUndo(before); // 編輯中的話，離開文字框時會一起記一步復原
     commit();
   }
@@ -703,8 +703,17 @@ export function createEditor(viewport, hooks = {}) {
     if (!body) return;
     const it = items.find((x) => x.id === body.closest('.textbox').dataset.id);
     if (!it) return;
-    it.html = body.innerHTML;
+    // 存整理過的版本：其他裝置看到的就是這個，Safari 自己加的樣式不會讓兩邊排版不同
+    it.html = sanitizeHtml(body.innerHTML);
     commit();
+  });
+
+  // 打完字離開文字框時，畫面也換成整理過的版本，這台和其他裝置的換行才會一模一樣
+  textLayer.addEventListener('focusout', (e) => {
+    const body = e.target.closest && e.target.closest('.tb-body');
+    if (!body) return;
+    const clean = sanitizeHtml(body.innerHTML);
+    if (clean !== body.innerHTML) body.innerHTML = clean;
   });
 
   textLayer.addEventListener('keydown', (e) => {

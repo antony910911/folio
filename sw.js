@@ -1,6 +1,6 @@
 // 離線快取：App 本身的檔案先從快取讀，背景再更新。
 // 新增或改名檔案時請更新 FILES 並把 VERSION 加一。
-const VERSION = 'v15';
+const VERSION = 'v16';
 const CACHE = `folio-${VERSION}`;
 const FILES = [
   './',
@@ -39,7 +39,7 @@ const FILES = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES.map((f) => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
