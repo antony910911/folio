@@ -66,6 +66,8 @@ html, body { height: 100%; }
 /* iOS 不理會 user-scalable=no：擋掉整個 App 被捏合放大（放大後捲軸會跑到畫面外）。
    筆記頁面自己的縮放不受影響 */
 html, body { touch-action: pan-x pan-y; }
+/* 工具列比畫面寬時（手機、iPad 開著側邊欄）：「⋯」固定在右邊，不用把工具列滑到底才找得到 */
+#more { position: sticky; right: 0; flex: none; background: var(--chrome); box-shadow: -12px 0 10px -2px var(--chrome), 14px 0 0 0 var(--chrome); }
 body {
   margin: 0;
   background: var(--desk);
@@ -710,8 +712,6 @@ button.ghost { background: color-mix(in srgb, var(--fg) 7%, transparent); }
   .tool-opts { gap: 4px; padding-left: 2px; }
 }
 @media (max-width: 560px) {
-  /* 手機上工具列比螢幕寬：「⋯」固定在右邊，不用把工具列滑到底才找得到 */
-  #more { position: sticky; right: 0; flex: none; background: var(--chrome); box-shadow: -10px 0 10px -4px var(--chrome); }
   .sizes { display: none; }
   .swatch { width: 28px; }
 }

@@ -104,6 +104,23 @@ details > div { padding: 0 16px 12px; }
 .check { list-style: none; padding: 0; margin: 8px 0; }
 .check li { position: relative; padding-left: 30px; margin: 8px 0; }
 .check li::before { content: ""; position: absolute; left: 0; top: 4px; width: 18px; height: 18px; border-radius: 5px; border: 2px solid var(--accent); }
+.shot { margin: 18px 0; }
+.shot .frame { position: relative; border-radius: 14px; overflow: hidden; border: 1px solid var(--line); box-shadow: var(--shadow), 0 10px 30px rgba(20, 30, 50, .10); background: var(--card); }
+.shot img { display: block; width: 100%; height: auto; }
+.shot figcaption { color: var(--muted); font-size: 14px; text-align: center; margin-top: 8px; }
+.shot.narrow { max-width: 420px; margin-left: auto; margin-right: auto; }
+.shot.tablet .frame { border: 10px solid #1d2330; border-radius: 26px; }
+.shot.phone { max-width: 300px; margin-left: auto; margin-right: auto; }
+.shot.phone .frame { border: 9px solid #1d2330; border-radius: 34px; }
+.pin { position: absolute; transform: translate(-50%, -50%); width: 26px; height: 26px; border-radius: 50%; background: #d9534f; color: #fff; font-size: 14px; font-weight: 700; display: grid; place-items: center; box-shadow: 0 0 0 3px #fff, 0 2px 8px rgba(0,0,0,.3); }
+@media (max-width: 560px) { .pin { width: 20px; height: 20px; font-size: 11px; box-shadow: 0 0 0 2px #fff; } .shot.tablet .frame { border-width: 6px; border-radius: 16px; } }
+.legend { list-style: none; padding: 0; margin: 12px 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 6px 18px; font-size: 15px; }
+.legend li { display: flex; gap: 8px; align-items: baseline; }
+.legend .pin { position: static; transform: none; flex: none; width: 22px; height: 22px; font-size: 12px; box-shadow: none; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; align-items: start; }
+.gallery .shot { margin: 0; }
+.gallery h3 { margin: 0 0 4px; font-size: 16px; }
+.gallery p { margin: 0 0 10px; color: var(--muted); font-size: 15px; }
 footer { margin-top: 56px; color: var(--muted); font-size: 14px; text-align: center; }
 hr { border: 0; border-top: 1px solid var(--line); margin: 40px 0; }
 </style>
@@ -123,9 +140,57 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 40px 0; }
   </ul>
 </header>
 
+<figure class="shot tablet">
+  <div class="frame">
+    <img src="screens/ipad.webp" width="1600" height="1118" alt="Folio 在 iPad 上的畫面：左邊是分區和頁面清單，右邊是筆記頁面，上面有一張投影片、紅筆手寫標註、重點文字、勾選清單和心智圖">
+    <span class="pin" style="left:24%;top:3.8%">1</span>
+    <span class="pin" style="left:6.3%;top:30%">2</span>
+    <span class="pin" style="left:22%;top:42%">3</span>
+    <span class="pin" style="left:47.5%;top:9%">4</span>
+    <span class="pin" style="left:97.3%;top:9.2%">5</span>
+    <span class="pin" style="left:57%;top:50%">6</span>
+    <span class="pin" style="left:91.5%;top:68%">7</span>
+  </div>
+  <ul class="legend">
+    <li><span class="pin">1</span><span><b>筆記本</b>：點名字可以切換、新增、隱藏、上鎖</span></li>
+    <li><span class="pin">2</span><span><b>分區</b>：像活頁夾的分隔頁，用顏色區分</span></li>
+    <li><span class="pin">3</span><span><b>頁面</b>：每個分區裡的一頁一頁筆記</span></li>
+    <li><span class="pin">4</span><span><b>工具列</b>：選取、捲動、筆、螢光筆、橡皮擦、文字、插入圖片／PDF、心智圖、清單</span></li>
+    <li><span class="pin">5</span><span><b>⋯ 設定面板</b>：背景、匯出 PDF／PowerPoint／Word、同步、備份</span></li>
+    <li><span class="pin">6</span><span><b>筆記頁面</b>：想寫哪裡就寫哪裡，投影片、手寫、文字、心智圖都放在一起</span></li>
+    <li><span class="pin">7</span><span><b>鎖定按鈕</b>：鎖住後只能捲動，不怕誤觸；可以拖到任何位置</span></li>
+  </ul>
+</figure>
+
+<h2 id="what">Folio 能做什麼</h2>
+<div class="gallery">
+  <div>
+    <h3>✍️ 在投影片上直接手寫</h3>
+    <p>把 PDF、簡報、圖片丟進來，用 Apple Pencil 圈重點、畫箭頭、用螢光筆劃線。</p>
+    <figure class="shot"><div class="frame"><img src="screens/annotate.webp" width="1100" height="370" loading="lazy" alt="投影片上用紅筆圈起 L3，箭頭指到旁邊的重點文字，標題有黃色螢光筆"></div></figure>
+  </div>
+  <div>
+    <h3>🧠 心智圖</h3>
+    <p>按一下就有心智圖，加子主題、同層主題，自動排版。</p>
+    <figure class="shot"><div class="frame"><img src="screens/mindmap.webp" width="900" height="264" loading="lazy" alt="中心主題 AIoT 導入，分出資料、模型、人、資安四個分支"></div></figure>
+  </div>
+  <div>
+    <h3>☑️ 勾選清單</h3>
+    <p>像 iPhone 備忘錄一樣，點圓圈打勾，完成的會劃掉。</p>
+    <figure class="shot narrow"><div class="frame"><img src="screens/checklist.webp" width="640" height="233" loading="lazy" alt="讀書會待辦清單，前兩項已經打勾劃掉"></div></figure>
+  </div>
+  <div>
+    <h3>📱 手機也能看</h3>
+    <p>iPad 寫的筆記，手機、電腦幾秒內就同步過去。</p>
+    <figure class="shot phone"><div class="frame"><img src="screens/phone.webp" width="720" height="1226" loading="lazy" alt="同一頁筆記在 iPhone 上的樣子"></div></figure>
+  </div>
+</div>
+<p>還有：匯出 PDF／PowerPoint／Word、手寫轉文字、頁面背景（橫線、方格、點點）、筆記本上鎖和隱藏、讓 AI 自動把資料存進來（第 10 步）。</p>
+
 <div class="card toc">
   <b>目錄</b>
   <ul>
+    <li><a href="#what">Folio 能做什麼</a></li>
     <li><a href="#idea">先搞懂：我們要做什麼？</a></li>
     <li><a href="#s1">1. 申請 GitHub 帳號</a></li>
     <li><a href="#s2">2. 複製一份 Folio 給自己</a></li>
@@ -243,8 +308,10 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 40px 0; }
 <div class="step"><div class="num">3</div><div class="body"><p>回到主畫面，點新出現的 <b>Folio 圖示</b>打開（之後都從這裡開，不要從 Safari 開）。</p></div></div>
 <div class="note warn"><b>為什麼要加到主畫面？</b>只用 Safari 開的話，太久沒用時 Safari 可能會清掉資料。加到主畫面的 Folio 不會被這樣清。</div>
 <h3>開啟同步（每台裝置都要做一次）</h3>
-<div class="step"><div class="num">1</div><div class="body"><p>打開 Folio，按左上角的方框圖示打開側邊欄，點<b>最下面</b>的「<b>開啟跨裝置同步</b>」。</p></div></div>
-<div class="step"><div class="num">2</div><div class="body"><p>輸入你在第 5 步設定的同步密碼（可以勾「顯示密碼」檢查有沒有打錯），按 <span class="btn">開啟同步</span>。</p></div></div>
+<div class="step"><div class="num">1</div><div class="body"><p>打開 Folio，按左上角的方框圖示打開側邊欄，點<b>最下面</b>的「<b>開啟跨裝置同步</b>」。</p>
+  <figure class="shot narrow"><div class="frame"><img src="screens/foot.webp" width="760" height="218" loading="lazy" alt="側邊欄最下面寫著「存在這台裝置・開啟跨裝置同步」"></div><figcaption>側邊欄最下面這一行</figcaption></figure>
+</div></div>
+<div class="step"><div class="num">2</div><div class="body"><figure class="shot narrow"><div class="frame"><img src="screens/sync.webp" width="760" height="658" loading="lazy" alt="跨裝置同步對話框，有同步密碼欄位、顯示密碼勾選框和開啟同步按鈕"></div></figure><p>輸入你在第 5 步設定的同步密碼（可以勾「顯示密碼」檢查有沒有打錯），按 <span class="btn">開啟同步</span>。</p></div></div>
 <div class="step"><div class="num">3</div><div class="body"><p>第二台以後的裝置會問你「雲端已經有筆記了」，<b>新裝置選「使用雲端的筆記」</b>。</p></div></div>
 <div class="note see"><b>✅ 完成的樣子</b>側邊欄最下面顯示「<b>已同步</b>」。在 iPad 寫一個字，1～2 秒後手機上就會出現。</div>
 <h3>電腦</h3>
@@ -257,7 +324,9 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 40px 0; }
 <div class="step"><div class="num">1</div><div class="body"><p>打開 <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a>，註冊並登入。</p></div></div>
 <div class="step"><div class="num">2</div><div class="body"><p>到 <span class="btn">Billing</span>（帳單）儲值一點金額（例如 5 美元，可以用很久）。</p></div></div>
 <div class="step"><div class="num">3</div><div class="body"><p>到 <span class="btn">API Keys</span> 按 <span class="btn">Create Key</span>，名字隨便取（例如 <code>folio</code>），按建立後<b>馬上複製</b>那串 <code>sk-ant-</code> 開頭的金鑰（它只會顯示這一次）。</p></div></div>
-<div class="step"><div class="num">4</div><div class="body"><p>回到 Folio，按右上角 <span class="btn">⋯</span> › <span class="btn">辨識設定</span>，貼上金鑰、儲存。</p></div></div>
+<div class="step"><div class="num">4</div><div class="body"><p>回到 Folio，按右上角 <span class="btn">⋯</span> › <span class="btn">辨識設定</span>，貼上金鑰、儲存。</p>
+  <figure class="shot narrow"><div class="frame"><img src="screens/panel.webp" width="760" height="1501" loading="lazy" alt="右上角 ⋯ 打開的設定面板，分成頁面、手寫、清單與檢視、匯出、資料與同步幾類"></div><figcaption>右上角「⋯」打開的設定面板：「辨識設定」在「手寫」那一排</figcaption></figure>
+</div></div>
 <div class="step"><div class="num">5</div><div class="body"><p>之後用「選取」工具框住手寫，按「<b>轉成文字</b>」就可以了。</p></div></div>
 <div class="note stop"><b>金鑰跟錢包一樣</b>金鑰只會存在你輸入的那台裝置上。不要給別人，也不要在別人的裝置上輸入。</div>
 
@@ -289,6 +358,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 40px 0; }
   <li>每週一整理某個領域的新論文或新法規</li>
   <li>看到一篇好文章，跟 AI 說「幫我摘要存到 Folio」</li>
 </ul>
+<figure class="shot"><div class="frame"><img src="screens/inbox.webp" width="1400" height="763" loading="lazy" alt="Folio 的收件匣筆記本，每日新聞分區裡有一頁 AI 整理的今日 5 則重點，附原文連結和待辦清單"></div><figcaption>Claude 每天早上自動整理好、存進「收件匣」的新聞重點</figcaption></figure>
 <div class="glossary">
   <div class="card"><b>📥 收件匣</b><span>AI 送來的資料會放在一本叫「<b>收件匣</b>」的筆記本裡（第一次送就會自動出現），可以再依主題分成不同分區，最新的在最上面。</span></div>
   <div class="card"><b>🗝 收件匣鑰匙</b><span>另外一組密碼，<b>只能新增頁面</b>，不能讀、也不能改你的其他筆記。給 AI 用的是這把，<b>不是同步密碼</b>。</span></div>
