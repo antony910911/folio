@@ -1,5 +1,5 @@
-// 匯入 PDF 和圖片：PDF 的每一頁畫成圖片（PDF.js），存成頁面上的圖片，可以直接在上面寫字。
-// PowerPoint／Keynote 請先另存成 PDF；瀏覽器沒辦法準確畫出 .pptx。
+// 匯入 PDF、PowerPoint 和圖片：每一頁畫成圖片，存成頁面上的圖片，可以直接在上面寫字。
+// PDF 用 PDF.js；.pptx 用 pptx.js 自己畫；舊的 .ppt 和 Keynote 請先另存成 PDF。
 
 import { loadPdfjs, urlFor } from './vendor.js';
 
@@ -11,7 +11,8 @@ export function fileKind(file) {
   const name = (file.name || '').toLowerCase();
   if (file.type === 'application/pdf' || name.endsWith('.pdf')) return 'pdf';
   if (/^image\/(png|jpeg|webp|gif)$/.test(file.type) || /\.(png|jpe?g|webp|gif)$/.test(name)) return 'image';
-  if (/\.(pptx?|key|odp)$/.test(name)) return 'slides';
+  if (/\.pptx$/.test(name) || file.type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') return 'pptx';
+  if (/\.(ppt|key|odp)$/.test(name)) return 'slides';
   if (/^image\/hei[cf]$/.test(file.type) || /\.hei[cf]$/.test(name)) return 'heic';
   return 'other';
 }

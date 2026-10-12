@@ -14,6 +14,7 @@ import { exportPptx, exportDocx, saveFile, safeFilename } from './exporter.js';
 import { exportPdf } from './pdfexport.js';
 import { recognize, backend, getApiKey, setApiKey } from './recognize.js';
 import { fileKind, openPdf, prepareImage } from './importer.js';
+import { openPptx } from './pptx.js';
 import * as sync from './sync.js';
 import { makeLock, checkLock, isLocked, pickNotebook } from './lock.js';
 
@@ -306,7 +307,7 @@ $('more').addEventListener('click', (e) => {
 });
 
 // 版本和字型狀態：各台裝置版面對不起來時，先確認是不是都更新到同一版
-const APP_VERSION = 'v24';
+const APP_VERSION = 'v25';
 function versionLine() {
   const font = !document.fonts || !document.fonts.check ? '' : document.fonts.check('16px "Noto Sans TC"', '筆記')
     ? '筆記字型已載入' : '筆記字型還沒載入（正在用系統字型，換行可能和其他裝置不同）';
@@ -1371,7 +1372,7 @@ $('insert-file').addEventListener('change', (e) => {
 // 貼上截圖
 document.addEventListener('paste', (e) => {
   if (editor.isTyping() || dlg.open) return;
-  const files = [...(e.clipboardData?.files || [])].filter((f) => fileKind(f) === 'image' || fileKind(f) === 'pdf');
+  const files = [...(e.clipboardData?.files || [])].filter((f) => ['image', 'pdf', 'pptx'].includes(fileKind(f)));
   if (!files.length) return;
   e.preventDefault();
   handleFiles(files, 'view');
@@ -1405,16 +1406,16 @@ async function handleFiles(files, at) {
   if (importing) { toast('還在匯入上一個檔案，請稍等。'); return; }
   const kinds = files.map(fileKind);
   if (kinds.includes('slides')) {
-    toast('PowerPoint／Keynote 檔請先另存成 PDF 再匯入。PowerPoint：檔案 › 匯出 › PDF；Keynote：檔案 › 輸出為 › PDF。');
+    toast('舊版 PowerPoint（.ppt）和 Keynote 檔請先另存成 .pptx 或 PDF 再匯入。PowerPoint：檔案 › 另存新檔／匯出；Keynote：檔案 › 輸出為 › PDF 或 PowerPoint。');
     return;
   }
   if (kinds.includes('heic')) { toast('HEIC 照片目前不支援，請先轉成 JPEG（iPad 上「拷貝」再貼上通常就會自動轉）。'); return; }
-  if (kinds.includes('other')) { toast('只能匯入 PDF 或圖片（PNG、JPEG、WebP、GIF）。'); return; }
+  if (kinds.includes('other')) { toast('只能匯入 PDF、PowerPoint（.pptx）或圖片（PNG、JPEG、WebP、GIF）。'); return; }
   importing = true;
   try {
     const images = files.filter((f, i) => kinds[i] === 'image');
     if (images.length) await importImages(images, at);
-    for (const f of files.filter((f, i) => kinds[i] === 'pdf')) await importPdf(f);
+    for (const f of files.filter((f, i) => kinds[i] === 'pdf' || kinds[i] === 'pptx')) await importPdf(f, fileKind(f));
   } catch (e) {
     console.error(e);
     toast(e && e.message ? `匯入失敗：${e.message}` : '匯入失敗，請再試一次。');
@@ -1446,19 +1447,23 @@ async function importImages(files, at) {
   toast(files.length > 1 ? `已插入 ${files.length} 張圖片。` : '已插入圖片。');
 }
 
-async function importPdf(file) {
-  toast('正在讀取 PDF…', { sticky: true });
+// PDF 和 PowerPoint 共用：選頁數、放在這一頁或每頁一個新頁面
+async function importPdf(file, kind = 'pdf') {
+  const isPptx = kind === 'pptx';
+  toast(isPptx ? '正在讀取簡報…' : '正在讀取 PDF…', { sticky: true });
   let pdf;
   try {
-    pdf = await openPdf(file);
+    pdf = isPptx ? await openPptx(file) : await openPdf(file);
   } catch (e) {
     console.error(e);
     if (e && e.name === 'PasswordException') throw new Error('這個 PDF 有密碼保護，請先移除密碼。');
+    if (isPptx) throw new Error(e && /密碼|encrypt/i.test(String(e.message)) ? '這個簡報有密碼保護，請先移除密碼。' : '讀不懂這個簡報。可以先在 PowerPoint 另存成 PDF 再匯入。');
     throw new Error('讀不懂這個 PDF。');
   }
+  if (!pdf.count) { pdf.destroy(); throw new Error('這個檔案裡沒有任何頁面。'); }
   try {
     hideToast();
-    const choice = await askPdfOptions(file.name, pdf.count);
+    const choice = await askPdfOptions(file.name, pdf.count, isPptx);
     if (!choice) return;
     const pageNumbers = parsePageRange(choice.range, pdf.count);
     if (!pageNumbers) { toast('頁數範圍看不懂，請寫成像「1-5, 8」這樣。'); return; }
@@ -1468,7 +1473,7 @@ async function importPdf(file) {
       const r = await pdf.render(n);
       rendered.push({ n, asset: await saveAsset(r), ...r.display });
     }
-    const base = file.name.replace(/\.pdf$/i, '');
+    const base = file.name.replace(/\.(pdf|pptx)$/i, '');
     if (choice.mode === 'here') {
       editor.insertImages(rendered.map(({ asset, w, h }) => ({ asset, w, h })), { at: 'below' });
       toast(`已插入 ${rendered.length} 頁，可以直接在上面寫字。`);
@@ -1478,7 +1483,8 @@ async function importPdf(file) {
       const newPages = [];
       const contents = [];
       for (const r of rendered) {
-        const pg = { ...createPage(state.sectionId, [...siblings, ...newPages]), title: `${base} 第 ${r.n} 頁`, background: 'blank' };
+        const slideTitle = pdf.titleOf ? await pdf.titleOf(r.n).catch(() => '') : '';
+        const pg = { ...createPage(state.sectionId, [...siblings, ...newPages]), title: slideTitle ? `${r.n}. ${slideTitle}` : `${base} 第 ${r.n} 頁`, background: 'blank' };
         newPages.push(pg);
         contents.push({ id: pg.id, items: [{ id: 'i_' + pg.id.slice(3), type: 'image', x: 64, y: 150, w: r.w, h: r.h, asset: r.asset }] });
       }
@@ -1492,13 +1498,14 @@ async function importPdf(file) {
   }
 }
 
-function askPdfOptions(name, count) {
+function askPdfOptions(name, count, isPptx = false) {
   dlgForm.innerHTML = `
     <h2 class="dlg-title">匯入「${esc(name)}」</h2>
-    <p class="dlg-msg">共 ${count} 頁。每一頁會變成一張圖片，可以直接用筆在上面寫。</p>
+    <p class="dlg-msg">共 ${count} ${isPptx ? '張投影片' : '頁'}。每一頁會變成一張圖片，可以直接用筆在上面寫。</p>
+    ${isPptx ? '<p class="dlg-hint">簡報是在這台裝置上直接畫出來的，字型或特殊效果可能和 PowerPoint 有一點不同；圖表、動畫不會顯示。要完全一樣，請在 PowerPoint 另存成 PDF 再匯入。</p>' : ''}
     <div class="import-opts" role="radiogroup" aria-label="放在哪裡">
       <label class="import-opt"><input type="radio" name="pdf-mode" value="here" checked><span>全部放在這一頁<small>由上往下排，適合邊看簡報邊寫筆記</small></span></label>
-      <label class="import-opt"><input type="radio" name="pdf-mode" value="pages"><span>每一頁建立一個新頁面<small>頁面標題是「檔名 第 n 頁」</small></span></label>
+      <label class="import-opt"><input type="radio" name="pdf-mode" value="pages"><span>每一頁建立一個新頁面<small>${isPptx ? '頁面標題用投影片的標題' : '頁面標題是「檔名 第 n 頁」'}</small></span></label>
     </div>
     <label class="dlg-label" for="dlg-range">頁數範圍</label>
     <input class="dlg-input" id="dlg-range" autocomplete="off" placeholder="全部，或像 1-5, 8">
