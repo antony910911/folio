@@ -307,7 +307,7 @@ $('more').addEventListener('click', (e) => {
 });
 
 // 版本和字型狀態：各台裝置版面對不起來時，先確認是不是都更新到同一版
-const APP_VERSION = 'v26';
+const APP_VERSION = 'v27';
 function versionLine() {
   const font = !document.fonts || !document.fonts.check ? '' : document.fonts.check('16px "Noto Sans TC"', '筆記')
     ? '筆記字型已載入' : '筆記字型還沒載入（正在用系統字型，換行可能和其他裝置不同）';
@@ -1393,15 +1393,41 @@ editorEl.addEventListener('dragleave', () => {
   dragDepth = Math.max(0, dragDepth - 1);
   if (!dragDepth) editorEl.classList.remove('dropping');
 });
-editorEl.addEventListener('drop', (e) => {
+editorEl.addEventListener('drop', async (e) => {
   e.preventDefault();
   dragDepth = 0;
   editorEl.classList.remove('dropping');
+  // 拖進來的是資料夾（例如 PowerPoint「另存成圖片」產生的那一包）：把裡面的檔案都拿出來
+  const entries = [...(e.dataTransfer.items || [])].map((it) => (it.webkitGetAsEntry ? it.webkitGetAsEntry() : null));
+  if (entries.some((en) => en && en.isDirectory)) {
+    const files = [];
+    for (const en of entries) if (en) files.push(...(await filesFromEntry(en)));
+    handleFiles(files, 'view', { fromFolder: true });
+    return;
+  }
   handleFiles([...e.dataTransfer.files], 'view');
 });
 
-async function handleFiles(files, at) {
-  if (!files.length) return;
+async function filesFromEntry(entry, depth = 0) {
+  if (entry.isFile) return [await new Promise((resolve, reject) => entry.file(resolve, reject))];
+  if (!entry.isDirectory || depth > 3) return [];
+  const reader = entry.createReader();
+  const all = [];
+  // readEntries 一次只回傳一部分，要讀到空為止
+  for (;;) {
+    const batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+    if (!batch.length) break;
+    all.push(...batch);
+  }
+  const out = [];
+  for (const en of all) out.push(...(await filesFromEntry(en, depth + 1)));
+  return out;
+}
+
+async function handleFiles(files, at, { fromFolder = false } = {}) {
+  // 資料夾裡常有 .DS_Store、Thumbs.db 這種檔案：略過看不懂的，只拿圖片、PDF、簡報
+  if (fromFolder) files = files.filter((f) => ['image', 'pdf', 'pptx'].includes(fileKind(f)));
+  if (!files.length) { if (fromFolder) toast('資料夾裡沒有可以匯入的圖片、PDF 或簡報。'); return; }
   if (!editor.page) { toast('請先新增一個頁面。'); return; }
   if (importing) { toast('還在匯入上一個檔案，請稍等。'); return; }
   const kinds = files.map(fileKind);
@@ -1436,15 +1462,52 @@ async function newAssetId(blob) {
   return 'as_' + [...digest.slice(0, 16)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+// 一次很多張：照檔名裡的數字排（投影片2 在 投影片10 前面），可以選放這一頁或每張一頁
 async function importImages(files, at) {
-  toast('正在匯入圖片…', { sticky: true });
-  const list = [];
-  for (const f of files) {
-    const prepared = await prepareImage(f);
-    list.push({ asset: await saveAsset(prepared), ...prepared.display });
+  files = files.slice().sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant', { numeric: true, sensitivity: 'base' }));
+  let mode = 'here';
+  if (files.length > 1) {
+    const choice = await askImagesOptions(files.length);
+    if (!choice) return;
+    mode = choice;
   }
-  editor.insertImages(list, { at: files.length > 1 ? 'below' : at });
-  toast(files.length > 1 ? `已插入 ${files.length} 張圖片。` : '已插入圖片。');
+  const list = [];
+  for (const [i, f] of files.entries()) {
+    if (files.length > 1) toast(`正在匯入第 ${i + 1} / ${files.length} 張…`, { sticky: true });
+    else toast('正在匯入圖片…', { sticky: true });
+    const prepared = await prepareImage(f);
+    list.push({ asset: await saveAsset(prepared), name: f.name.replace(/\.[^.]+$/, ''), ...prepared.display });
+  }
+  if (mode === 'here') {
+    editor.insertImages(list.map(({ asset, w, h }) => ({ asset, w, h })), { at: files.length > 1 ? 'below' : at });
+    toast(files.length > 1 ? `已插入 ${files.length} 張圖片，可以直接在上面寫字。` : '已插入圖片。');
+    return;
+  }
+  await flush();
+  const siblings = pagesOf(state.sectionId);
+  const newPages = [];
+  const contents = [];
+  for (const r of list) {
+    const pg = { ...createPage(state.sectionId, [...siblings, ...newPages]), title: r.name, background: 'blank' };
+    newPages.push(pg);
+    contents.push({ id: pg.id, items: [{ id: 'i_' + pg.id.slice(3), type: 'image', x: 64, y: 150, w: r.w, h: r.h, asset: r.asset }] });
+  }
+  state.pages.push(...newPages);
+  await store.putMany({ pages: newPages, contents });
+  await openPage(newPages[0].id);
+  toast(`已建立 ${newPages.length} 個頁面。`);
+}
+
+function askImagesOptions(count) {
+  dlgForm.innerHTML = `
+    <h2 class="dlg-title">匯入 ${count} 張圖片</h2>
+    <p class="dlg-msg">會照檔名的順序排（投影片 2 在投影片 10 前面）。</p>
+    <div class="import-opts" role="radiogroup" aria-label="放在哪裡">
+      <label class="import-opt"><input type="radio" name="img-mode" value="here" checked><span>全部放在這一頁<small>由上往下排，適合邊看簡報邊寫筆記</small></span></label>
+      <label class="import-opt"><input type="radio" name="img-mode" value="pages"><span>每一張建立一個新頁面<small>頁面標題是圖片的檔名</small></span></label>
+    </div>
+    <div class="dlg-actions"><button type="button" class="ghost" id="dlg-cancel">取消</button><button class="primary" value="ok">匯入</button></div>`;
+  return showDialog(() => dlgForm.querySelector('[name=img-mode]:checked').value, () => dlgForm.querySelector('[value=ok]').focus());
 }
 
 // PDF 和 PowerPoint 共用：選頁數、放在這一頁或每頁一個新頁面
