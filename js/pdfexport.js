@@ -66,11 +66,27 @@ async function collect(page, items, getAsset) {
   return { draws, blocks };
 }
 
+// PDF 的標題：太長的話縮小字（最小 18px），還放不下就分兩行；不讓標題把整頁內容擠小
+function titleLayout(page) {
+  const m = measureCtx();
+  const text = pageDisplayTitle(page);
+  for (let size = 30; size >= 18; size -= 2) {
+    m.font = `600 ${size}px ${TITLE_FONT}`;
+    if (m.measureText(text).width <= 640) return { size, lines: [text] };
+  }
+  m.font = `600 18px ${TITLE_FONT}`;
+  const lines = wrapRuns([{ text }], 640, (t) => m.measureText(t).width).map((l) => l.map((x) => x.text).join(''));
+  if (lines.length > 2) lines.splice(1, lines.length - 1, lines.slice(1).join('').slice(0, 40) + '…');
+  return { size: 18, lines: lines.slice(0, 2) };
+}
+
 function drawHeader(ctx, page) {
+  const t = titleLayout(page);
   ctx.fillStyle = INK;
-  ctx.font = `600 30px ${TITLE_FONT}`;
+  ctx.font = `600 ${t.size}px ${TITLE_FONT}`;
   ctx.textBaseline = 'top';
-  ctx.fillText(pageDisplayTitle(page), 64, 46);
+  if (t.lines.length === 1) ctx.fillText(t.lines[0], 64, 46 + (30 - t.size) / 2);
+  else t.lines.forEach((line, i) => ctx.fillText(line, 64, 42 + i * 21));
   ctx.fillStyle = '#c9d0db';
   ctx.fillRect(64, 84, 640, 1);
   ctx.fillStyle = '#7a8291';

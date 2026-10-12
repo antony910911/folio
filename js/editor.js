@@ -221,6 +221,19 @@ export function createEditor(viewport, hooks = {}) {
     for (const type of ['pointermove', 'pointerup', 'pointercancel']) b.el.addEventListener(type, (e) => e.stopPropagation());
   }
   new ResizeObserver(() => { vpSize = null; bars.x.track = bars.y.track = 0; updateScrollbars(); }).observe(viewport);
+  // 瀏覽器為了讓游標看得到，會自己捲動畫布（例如標題很長、在畫面邊緣打字）。
+  // 畫布的位置是我們自己用 transform 控制的，被偷偷捲動的話，筆畫的位置會和手指對不起來。
+  // 所以把瀏覽器的捲動換成我們自己的平移：游標一樣看得到，座標不會跑掉。
+  viewport.addEventListener('scroll', () => {
+    const dx = viewport.scrollLeft;
+    const dy = viewport.scrollTop;
+    if (!dx && !dy) return;
+    viewport.scrollLeft = 0;
+    viewport.scrollTop = 0;
+    view.x -= dx;
+    view.y -= dy;
+    applyView();
+  });
 
   let lastZ = null;
   function applyView() {
@@ -302,8 +315,22 @@ export function createEditor(viewport, hooks = {}) {
     applyView();
   }
 
+  // 標題欄跟著標題長度變寬（一行顯示完整標題，不會被截掉；太長就往右延伸，可以捲過去看）
+  const titleMeasure = document.createElement('canvas').getContext('2d');
+  let headW = 640;
+  function fitTitle() {
+    const cs = getComputedStyle(titleInput);
+    titleMeasure.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    const w = Math.max(640, Math.ceil(titleMeasure.measureText(titleInput.value || titleInput.placeholder).width) + 32);
+    if (w === headW && titleInput.parentElement.style.width) return;
+    headW = w;
+    titleInput.parentElement.style.width = w + 'px';
+    if (page) { updateSurfaceSize(); applyView(); }
+  }
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => fitTitle());
+
   function updateSurfaceSize() {
-    let maxX = 0;
+    let maxX = 64 + headW;
     let maxY = 0;
     for (const it of items) {
       const b = itemBounds(it);
@@ -1547,6 +1574,7 @@ export function createEditor(viewport, hooks = {}) {
     if (!page) return;
     page.title = titleInput.value;
     page.updatedAt = Date.now();
+    fitTitle();
     emit('onTitle', page);
   });
   // 中文輸入法選字時按的 Enter 不能當成「打完了」：在選字途中讓輸入框失去焦點，
@@ -1581,6 +1609,7 @@ export function createEditor(viewport, hooks = {}) {
     mmbar.hidden = true;
     mapLayouts.clear();
     titleInput.value = page.title || '';
+    fitTitle();
     dateEl.textContent = formatDate(page.createdAt);
     setBackground(page.background || 'ruled', false);
     renderAll();
@@ -1696,7 +1725,7 @@ export function createEditor(viewport, hooks = {}) {
       undoStack = [];
       redoStack = [];
       selection.clear();
-      if (document.activeElement !== titleInput) titleInput.value = p.title || '';
+      if (document.activeElement !== titleInput) { titleInput.value = p.title || ''; fitTitle(); }
       surface.dataset.bg = p.background || 'ruled';
       renderAll();
       emitHistory();
