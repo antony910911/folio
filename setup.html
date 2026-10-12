@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>架一份自己的 Folio</title>
+<meta name="description" content="一步一步教你免費架一份只屬於自己的 Folio 筆記 App：不用會寫程式。">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<style>
+:root {
+  --bg: #f6f7f9;
+  --card: #ffffff;
+  --fg: #1d2330;
+  --muted: #5d6676;
+  --line: #e1e5eb;
+  --accent: #3d6fd8;
+  --accent-soft: #e8effc;
+  --ok: #2f9e6e;
+  --ok-soft: #e5f5ee;
+  --warn: #b7791f;
+  --warn-soft: #fdf4e3;
+  --danger: #c2413b;
+  --danger-soft: #fbeaea;
+  --code: #f0f2f5;
+  --shadow: 0 1px 2px rgba(20, 30, 50, .06), 0 4px 16px rgba(20, 30, 50, .05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171b;
+    --card: #1c2026;
+    --fg: #e6e9ee;
+    --muted: #9aa3b2;
+    --line: #2c323a;
+    --accent: #7aa2f0;
+    --accent-soft: #1f2a3f;
+    --ok: #5cc596;
+    --ok-soft: #17302a;
+    --warn: #e3b25c;
+    --warn-soft: #33291a;
+    --danger: #ef7d76;
+    --danger-soft: #3a1f1f;
+    --code: #252a32;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14171b; --card: #1c2026; --fg: #e6e9ee; --muted: #9aa3b2; --line: #2c323a;
+  --accent: #7aa2f0; --accent-soft: #1f2a3f; --ok: #5cc596; --ok-soft: #17302a;
+  --warn: #e3b25c; --warn-soft: #33291a; --danger: #ef7d76; --danger-soft: #3a1f1f;
+  --code: #252a32; --shadow: none;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.75 -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+}
+.wrap { max-width: 780px; margin: 0 auto; padding: 32px 16px 80px; }
+header.hero { text-align: center; padding: 24px 0 8px; }
+.hero img { width: 72px; height: 72px; border-radius: 18px; box-shadow: var(--shadow); }
+h1 { font-size: 30px; line-height: 1.3; margin: 16px 0 8px; text-wrap: balance; }
+.lead { color: var(--muted); font-size: 17px; margin: 0 auto; max-width: 560px; text-wrap: pretty; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 20px 0 8px; padding: 0; list-style: none; }
+.facts li { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 4px 14px; font-size: 14px; }
+h2 { font-size: 22px; margin: 48px 0 12px; line-height: 1.4; scroll-margin-top: 16px; }
+h3 { font-size: 17px; margin: 24px 0 8px; }
+p { margin: 10px 0; }
+a { color: var(--accent); text-underline-offset: 3px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; box-shadow: var(--shadow); margin: 14px 0; }
+.toc ul { margin: 6px 0 0; padding-left: 0; list-style: none; columns: 2; column-gap: 32px; }
+.toc li { margin: 2px 0; }
+.toc li { break-inside: avoid; }
+@media (max-width: 560px) { .toc ul { columns: 1; } }
+.glossary { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.glossary .card { margin: 0; }
+.glossary .card > b { display: block; font-size: 16px; margin-bottom: 2px; }
+.glossary span { color: var(--muted); font-size: 15px; }
+.step { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 4px 14px; margin: 20px 0; }
+.step .num { width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 15px; margin-top: 2px; }
+.step .body > :first-child { margin-top: 4px; }
+.part-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.part-head .tag { font-size: 13px; font-weight: 600; padding: 2px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.part-head .tag.opt { background: var(--code); color: var(--muted); }
+ol.do { padding-left: 22px; margin: 8px 0; }
+ol.do > li { margin: 6px 0; padding-left: 2px; }
+.btn { display: inline-block; font-weight: 600; font-size: 14.5px; line-height: 1.5; padding: 0 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--code); white-space: nowrap; }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14.5px; background: var(--code); padding: 1px 6px; border-radius: 5px; word-break: break-all; }
+.copy { display: flex; align-items: stretch; gap: 0; margin: 8px 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--code); }
+.copy code { flex: 1; min-width: 0; background: none; padding: 9px 12px; font-size: 15px; white-space: pre-wrap; }
+.copy button { flex: none; border: 0; border-left: 1px solid var(--line); background: var(--card); color: var(--accent); font: inherit; font-size: 14px; font-weight: 600; padding: 0 16px; cursor: pointer; min-height: 44px; }
+.copy button.done { color: var(--ok); }
+.note { border-radius: 12px; padding: 12px 16px; margin: 12px 0; font-size: 15px; }
+.note b:first-child { display: block; margin-bottom: 2px; }
+.note.see { background: var(--ok-soft); border-left: 4px solid var(--ok); }
+.note.tip { background: var(--accent-soft); border-left: 4px solid var(--accent); }
+.note.warn { background: var(--warn-soft); border-left: 4px solid var(--warn); }
+.note.stop { background: var(--danger-soft); border-left: 4px solid var(--danger); }
+details { background: var(--card); border: 1px solid var(--line); border-radius: 12px; margin: 10px 0; }
+summary { cursor: pointer; padding: 12px 16px; font-weight: 600; list-style-position: inside; }
+details > div { padding: 0 16px 12px; }
+.prompt { white-space: pre-wrap; }
+.check { list-style: none; padding: 0; margin: 8px 0; }
+.check li { position: relative; padding-left: 30px; margin: 8px 0; }
+.check li::before { content: ""; position: absolute; left: 0; top: 4px; width: 18px; height: 18px; border-radius: 5px; border: 2px solid var(--accent); }
+footer { margin-top: 56px; color: var(--muted); font-size: 14px; text-align: center; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 40px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <img src="icons/icon-192.png" alt="">
+  <h1>架一份只屬於你的 Folio</h1>
+  <p class="lead">Folio 是一個可以用 Apple Pencil 手寫、打字、畫心智圖，還能在 iPad、手機、電腦之間同步的筆記 App。照著這份教學一步一步做，你就會有一份完全屬於自己的 Folio。<b>不用會寫程式。</b></p>
+  <ul class="facts">
+    <li>⏱ 大約 30 分鐘</li>
+    <li>💰 全部免費</li>
+    <li>💻 建議用電腦設定</li>
+    <li>🔒 筆記只有你看得到</li>
+  </ul>
+</header>
+
+<div class="card toc">
+  <b>目錄</b>
+  <ul>
+    <li><a href="#idea">先搞懂：我們要做什麼？</a></li>
+    <li><a href="#s1">1. 申請 GitHub 帳號</a></li>
+    <li><a href="#s2">2. 複製一份 Folio 給自己</a></li>
+    <li><a href="#s3">3. 申請 Cloudflare 帳號</a></li>
+    <li><a href="#s4">4. 把 Folio 放到網路上</a></li>
+    <li><a href="#s5">5. 設定同步密碼</a></li>
+    <li><a href="#s6">6. 裝到 iPad、手機、電腦</a></li>
+    <li><a href="#s7">7.（選用）手寫轉文字</a></li>
+    <li><a href="#s8">8. 之後怎麼更新</a></li>
+    <li><a href="#s9">9.（進階）請 Claude 幫你改</a></li>
+    <li><a href="#help">卡住了怎麼辦</a></li>
+  </ul>
+</div>
+
+<h2 id="idea">先搞懂：我們要做什麼？</h2>
+<p>你可以把整件事想成「<b>開一間自己的店</b>」：</p>
+<div class="glossary">
+  <div class="card"><b>📦 GitHub＝倉庫</b><span>放 Folio「程式碼」的地方。你會從原作者的倉庫<b>複製一份</b>到自己的倉庫（這個動作叫 <b>Fork</b>）。</span></div>
+  <div class="card"><b>🏪 Cloudflare＝店面</b><span>讓 Folio 變成一個網址，任何裝置打開就能用。它會自動從你的倉庫拿程式碼來「開店」（叫做<b>部署</b>）。</span></div>
+  <div class="card"><b>🔑 同步密碼＝店的鑰匙</b><span>你自己訂的一組密碼。iPad、手機、電腦都輸入同一組，筆記就會互相同步。<b>不要給別人。</b></span></div>
+  <div class="card"><b>🤖 Claude＝助理（選用）</b><span>手寫轉文字會用到；你也可以請它幫你改 Folio 的功能。不用也完全可以正常使用。</span></div>
+</div>
+<div class="note tip"><b>做完之後</b>你的 Folio 和原作者的是<b>兩份完全分開</b>的 App：你看不到他的筆記，他也看不到你的。</div>
+
+<div class="card">
+  <b>開始前準備好</b>
+  <ul class="check">
+    <li>一個常用的 Email（會收到驗證信）</li>
+    <li>一台電腦（用 iPad 也可以，只是畫面比較小、按鈕比較難找）</li>
+    <li>想好一組<b>同步密碼</b>：至少 8 個字，可以用英文、數字、符號或中文，記在安全的地方</li>
+  </ul>
+</div>
+
+<!-- ============ 1 ============ -->
+<h2 id="s1"><span class="part-head">1. 申請 GitHub 帳號 <span class="tag">約 5 分鐘</span></span></h2>
+<p>已經有 GitHub 帳號的話，登入後直接跳到<a href="#s2">第 2 步</a>。</p>
+<div class="step"><div class="num">1</div><div class="body"><p>打開 <a href="https://github.com/signup" target="_blank" rel="noopener">github.com/signup</a>。</p></div></div>
+<div class="step"><div class="num">2</div><div class="body"><p>依序填入 <b>Email</b>、<b>密碼</b>、<b>使用者名稱</b>（英文，之後會出現在網址裡，例如 <code>amy-notes</code>），按 <span class="btn">Continue</span> 或 <span class="btn">Create account</span>。</p></div></div>
+<div class="step"><div class="num">3</div><div class="body"><p>可能會要你玩一個小驗證（選圖片之類的），證明你不是機器人。</p></div></div>
+<div class="step"><div class="num">4</div><div class="body"><p>去信箱收 GitHub 寄來的<b>驗證碼</b>，填回網頁。</p></div></div>
+<div class="step"><div class="num">5</div><div class="body"><p>接下來如果問你一些問卷問題（用途、團隊人數），可以直接按 <span class="btn">Skip personalization</span> 跳過。方案選<b>免費（Free）</b>就好。</p></div></div>
+<div class="note see"><b>✅ 完成的樣子</b>畫面右上角有你的頭像圓圈，代表已經登入。</div>
+
+<!-- ============ 2 ============ -->
+<h2 id="s2"><span class="part-head">2. 複製一份 Folio 給自己（Fork） <span class="tag">約 2 分鐘</span></span></h2>
+<div class="step"><div class="num">1</div><div class="body">
+  <p>確定已經登入 GitHub，打開原作者的 Folio 倉庫：</p>
+  <div class="copy"><code>https://github.com/antony910911/folio</code><button type="button" data-copy="https://github.com/antony910911/folio">複製</button></div>
+</div></div>
+<div class="step"><div class="num">2</div><div class="body"><p>在頁面<b>右上方</b>找到 <span class="btn">Fork</span> 按鈕（旁邊有一個分岔的小圖示），按下去。</p>
+  <div class="note tip"><b>用手機看找不到？</b>手機版畫面比較擠，可以把網頁往右滑一點，或改用電腦。</div>
+</div></div>
+<div class="step"><div class="num">3</div><div class="body"><p>會出現「Create a new fork」的頁面。<b>什麼都不用改</b>，Repository name 保持 <code>folio</code>，直接按最下面綠色的 <span class="btn">Create fork</span>。</p></div></div>
+<div class="note see"><b>✅ 完成的樣子</b>網址變成 <code>github.com/你的使用者名稱/folio</code>，標題下面有一行小字「forked from antony910911/folio」。這就是<b>你自己的</b>倉庫了。</div>
+
+<!-- ============ 3 ============ -->
+<h2 id="s3"><span class="part-head">3. 申請 Cloudflare 帳號 <span class="tag">約 3 分鐘</span></span></h2>
+<div class="step"><div class="num">1</div><div class="body"><p>打開 <a href="https://dash.cloudflare.com/sign-up" target="_blank" rel="noopener">dash.cloudflare.com/sign-up</a>，填 Email 和密碼，按 <span class="btn">Sign up</span>。</p></div></div>
+<div class="step"><div class="num">2</div><div class="body"><p>到信箱點 Cloudflare 寄來的驗證連結。</p></div></div>
+<div class="step"><div class="num">3</div><div class="body"><p>登入後如果問你要做什麼（網域、網站之類），都可以跳過或關掉。<b>不需要買網域，也不需要信用卡。</b></p></div></div>
+<div class="note see"><b>✅ 完成的樣子</b>看到 Cloudflare 的後台，左邊有一排選單。</div>
+
+<!-- ============ 4 ============ -->
+<h2 id="s4"><span class="part-head">4. 把 Folio 放到網路上（部署） <span class="tag">約 5 分鐘</span></span></h2>
+<div class="step"><div class="num">1</div><div class="body"><p>在 Cloudflare 後台左邊選單找到 <span class="btn">Workers &amp; Pages</span>，點進去。<br><small>（有時候它藏在 <span class="btn">Compute (Workers)</span> 底下，展開就看得到。）</small></p></div></div>
+<div class="step"><div class="num">2</div><div class="body"><p>按 <span class="btn">Create application</span>（或 <span class="btn">Create</span>）。</p></div></div>
+<div class="step"><div class="num">3</div><div class="body"><p>在「<b>Import a repository</b>」旁邊按 <span class="btn">Get started</span>。</p></div></div>
+<div class="step"><div class="num">4</div><div class="body">
+  <p>第一次會要你連接 GitHub：按 <span class="btn">Connect GitHub</span>（或選 GitHub 帳號），會跳到 GitHub 的授權頁面。</p>
+  <ol class="do">
+    <li>選 <b>Only select repositories</b>（只給 Cloudflare 看指定的倉庫，比較安全）。</li>
+    <li>在下拉選單選 <code>folio</code>。</li>
+    <li>按 <span class="btn">Install &amp; Authorize</span>，可能要再輸入一次 GitHub 密碼。</li>
+  </ol>
+</div></div>
+<div class="step"><div class="num">5</div><div class="body"><p>回到 Cloudflare，在倉庫清單裡點 <code>folio</code>。</p></div></div>
+<div class="step"><div class="num">6</div><div class="body">
+  <p>會出現設定頁面，<b>大部分都不用改</b>，只要確認這幾項：</p>
+  <ul>
+    <li><b>Project name</b>（專案名稱）：一定要是 <code>folio</code>，不要改成別的。</li>
+    <li><b>Build command</b>（建置指令）：留空白。</li>
+    <li><b>Deploy command</b>（部署指令）：保持預設的 <code>npx wrangler deploy</code>。</li>
+  </ul>
+  <p>然後按 <span class="btn">Deploy</span>（或 <span class="btn">Save and Deploy</span>）。</p>
+</div></div>
+<div class="step"><div class="num">7</div><div class="body"><p>等 1～3 分鐘，畫面會顯示部署進度。看到成功（Success／綠色勾勾）就好了。</p>
+  <div class="note tip"><b>第一次用 Cloudflare？</b>它可能會請你取一個 <b>workers.dev 子網域</b>名稱（例如 <code>amy</code>），這會變成你網址的一部分。取一個你喜歡的英文名字就好。</div>
+</div></div>
+<div class="note see"><b>✅ 完成的樣子</b>你會看到一個網址，長得像：<br><code>https://folio.你的子網域.workers.dev</code><br>點下去看到 Folio 的畫面，就代表成功了！<b>把這個網址記下來</b>，之後每台裝置都用它。</div>
+
+<!-- ============ 5 ============ -->
+<h2 id="s5"><span class="part-head">5. 設定同步密碼 <span class="tag">約 2 分鐘</span></span></h2>
+<p>這一步是讓 iPad、手機、電腦的筆記可以互相同步。<b>不設定的話，每台裝置的筆記會各自分開。</b></p>
+<div class="step"><div class="num">1</div><div class="body"><p>在 Cloudflare 的 <span class="btn">Workers &amp; Pages</span> 裡點 <code>folio</code>。</p></div></div>
+<div class="step"><div class="num">2</div><div class="body"><p>上方分頁選 <span class="btn">Settings</span>，往下找到 <b>Variables and Secrets</b>，按旁邊的 <span class="btn">Add</span>。</p></div></div>
+<div class="step"><div class="num">3</div><div class="body">
+  <p>填這三格：</p>
+  <ul>
+    <li><b>Type</b>（類型）：選 <b>Secret</b>。⚠️ 一定要選 Secret，不要選 Text。</li>
+    <li><b>Variable name</b>（名稱）：完全照抄，大小寫要一樣：
+      <div class="copy"><code>SYNC_TOKEN</code><button type="button" data-copy="SYNC_TOKEN">複製</button></div></li>
+    <li><b>Value</b>（值）：你自己想好的同步密碼。</li>
+  </ul>
+</div></div>
+<div class="step"><div class="num">4</div><div class="body"><p>按 <span class="btn">Deploy</span>（或 <span class="btn">Save</span>）讓設定生效。</p></div></div>
+<div class="note warn"><b>為什麼一定要選 Secret？</b>選 Text 的話，之後每次更新 Folio 時這個密碼都可能被清掉，App 左下角就會跳出「伺服器上的同步密碼不見了」。</div>
+<div class="note stop"><b>🔑 同步密碼就是你筆記的鑰匙</b>知道這組密碼的人，就能看到、也能修改你所有的筆記。不要傳給別人，也不要在別人的裝置上輸入。</div>
+
+<!-- ============ 6 ============ -->
+<h2 id="s6"><span class="part-head">6. 裝到 iPad、手機、電腦 <span class="tag">每台約 2 分鐘</span></span></h2>
+<h3>iPad／iPhone</h3>
+<div class="step"><div class="num">1</div><div class="body"><p>用 <b>Safari</b> 打開你的 Folio 網址（<code>https://folio.你的子網域.workers.dev</code>）。</p></div></div>
+<div class="step"><div class="num">2</div><div class="body"><p>按畫面上的<b>分享按鈕</b>（方框加一個向上箭頭），往下滑，選 <span class="btn">加入主畫面</span>，再按 <span class="btn">新增</span>。</p></div></div>
+<div class="step"><div class="num">3</div><div class="body"><p>回到主畫面，點新出現的 <b>Folio 圖示</b>打開（之後都從這裡開，不要從 Safari 開）。</p></div></div>
+<div class="note warn"><b>為什麼要加到主畫面？</b>只用 Safari 開的話，太久沒用時 Safari 可能會清掉資料。加到主畫面的 Folio 不會被這樣清。</div>
+<h3>開啟同步（每台裝置都要做一次）</h3>
+<div class="step"><div class="num">1</div><div class="body"><p>打開 Folio，按左上角的方框圖示打開側邊欄，點<b>最下面</b>的「<b>開啟跨裝置同步</b>」。</p></div></div>
+<div class="step"><div class="num">2</div><div class="body"><p>輸入你在第 5 步設定的同步密碼（可以勾「顯示密碼」檢查有沒有打錯），按 <span class="btn">開啟同步</span>。</p></div></div>
+<div class="step"><div class="num">3</div><div class="body"><p>第二台以後的裝置會問你「雲端已經有筆記了」，<b>新裝置選「使用雲端的筆記」</b>。</p></div></div>
+<div class="note see"><b>✅ 完成的樣子</b>側邊欄最下面顯示「<b>已同步</b>」。在 iPad 寫一個字，1～2 秒後手機上就會出現。</div>
+<h3>電腦</h3>
+<p>用 Chrome、Edge 或 Safari 打開同一個網址，一樣開啟同步就好。想要像 App 一樣有自己的視窗：Chrome／Edge 網址列右邊有一個「安裝」小圖示可以按。</p>
+
+<!-- ============ 7 ============ -->
+<h2 id="s7"><span class="part-head">7. 手寫轉文字 <span class="tag opt">選用・需要付費</span></span></h2>
+<p>Folio 可以把你的手寫字轉成打字的文字，這個功能是請 Claude（Anthropic 公司的 AI）幫忙讀字的，需要一把「<b>API 金鑰</b>」，費用按使用量計算（辨識一段手寫通常不到台幣 1 元）。</p>
+<div class="note tip"><b>不想花錢？</b>iPad 有內建的免費功能「<b>隨手寫</b>」：在 Folio 的文字框裡直接用 Apple Pencil 寫字，iPad 會自動轉成文字（iPad 的 設定 › Apple Pencil › 隨手寫 要打開）。</div>
+<div class="step"><div class="num">1</div><div class="body"><p>打開 <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a>，註冊並登入。</p></div></div>
+<div class="step"><div class="num">2</div><div class="body"><p>到 <span class="btn">Billing</span>（帳單）儲值一點金額（例如 5 美元，可以用很久）。</p></div></div>
+<div class="step"><div class="num">3</div><div class="body"><p>到 <span class="btn">API Keys</span> 按 <span class="btn">Create Key</span>，名字隨便取（例如 <code>folio</code>），按建立後<b>馬上複製</b>那串 <code>sk-ant-</code> 開頭的金鑰（它只會顯示這一次）。</p></div></div>
+<div class="step"><div class="num">4</div><div class="body"><p>回到 Folio，按右上角 <span class="btn">⋯</span> › <span class="btn">辨識設定</span>，貼上金鑰、儲存。</p></div></div>
+<div class="step"><div class="num">5</div><div class="body"><p>之後用「選取」工具框住手寫，按「<b>轉成文字</b>」就可以了。</p></div></div>
+<div class="note stop"><b>金鑰跟錢包一樣</b>金鑰只會存在你輸入的那台裝置上。不要給別人，也不要在別人的裝置上輸入。</div>
+
+<!-- ============ 8 ============ -->
+<h2 id="s8"><span class="part-head">8. 之後怎麼更新到新版 <span class="tag">約 1 分鐘</span></span></h2>
+<p>原作者之後加了新功能，你的 Folio <b>不會自動跟著更新</b>（因為是你自己的一份）。想更新的時候：</p>
+<div class="step"><div class="num">1</div><div class="body"><p>登入 GitHub，打開你自己的倉庫 <code>github.com/你的使用者名稱/folio</code>。</p></div></div>
+<div class="step"><div class="num">2</div><div class="body"><p>如果有新版，會看到一行「This branch is X commits behind…」。按旁邊的 <span class="btn">Sync fork</span>，再按綠色的 <span class="btn">Update branch</span>。</p></div></div>
+<div class="step"><div class="num">3</div><div class="body"><p>Cloudflare 會在 1～3 分鐘內自動重新部署。之後把 iPad 上的 Folio 完全關掉再打開一兩次，就是新版了。</p></div></div>
+<div class="note tip"><b>你的筆記不會受影響</b>更新的只是 App 本身，筆記存在你的裝置和你的 Cloudflare 裡，不會被覆蓋。</div>
+
+<!-- ============ 9 ============ -->
+<h2 id="s9"><span class="part-head">9. 請 Claude 幫你改功能 <span class="tag opt">進階・選用</span></span></h2>
+<p>想要 Folio 多一個功能、換個顏色？可以直接用中文跟 Claude 說，它會幫你改好你自己的那一份：</p>
+<div class="step"><div class="num">1</div><div class="body"><p>打開 <a href="https://claude.ai/code" target="_blank" rel="noopener">claude.ai/code</a>，登入 Claude 帳號（需要付費方案）。</p></div></div>
+<div class="step"><div class="num">2</div><div class="body"><p>照畫面指示連接 GitHub，選你自己的 <code>你的使用者名稱/folio</code> 倉庫。</p></div></div>
+<div class="step"><div class="num">3</div><div class="body">
+  <p>用平常說話的方式描述你要什麼，例如：</p>
+  <div class="copy"><code class="prompt">我想在 Folio 的工具列加一個「插入今天日期」的按鈕，按下去會在頁面新增一個寫著今天日期的文字框。改好之後幫我推到 main。</code><button type="button" data-copy-from="prev">複製</button></div>
+</div></div>
+<div class="step"><div class="num">4</div><div class="body"><p>Claude 改好、推上 GitHub 後，Cloudflare 會自動部署。重開 Folio 就能看到。</p></div></div>
+<div class="note warn"><b>改之前先備份</b>在 Folio 按 <span class="btn">⋯</span> › <span class="btn">匯出備份</span> 存一份檔案。萬一改壞了，筆記還在。<br>你改的只是<b>你自己那一份</b>，不會影響原作者的 Folio。</div>
+
+<!-- ============ help ============ -->
+<h2 id="help">卡住了怎麼辦</h2>
+<details>
+  <summary>部署失敗，訊息有「name … must match」</summary>
+  <div><p>第 4 步的 Project name 不是 <code>folio</code>。到 Cloudflare 把剛剛建立的 Worker 刪掉（Worker › Settings › 最下面 Delete），再照第 4 步重做一次，名稱保持 <code>folio</code>。</p></div>
+</details>
+<details>
+  <summary>打開網址顯示「No URLs enabled」或找不到網頁</summary>
+  <div><p>到 Cloudflare 的 <code>folio</code> › <span class="btn">Settings</span> › <b>Domains &amp; Routes</b>，把 <b>workers.dev</b> 那一列打開（Enable）。等一兩分鐘再試。</p></div>
+</details>
+<details>
+  <summary>Folio 左下角說「伺服器還沒有設定同步密碼」或「同步密碼不見了」</summary>
+  <div><p>回到第 5 步檢查：名稱是不是完全是 <code>SYNC_TOKEN</code>（大寫、底線）、類型是不是 <b>Secret</b>、最後有沒有按 <span class="btn">Deploy</span>。改好後在 Folio 重新輸入一次同步密碼。</p></div>
+</details>
+<details>
+  <summary>Folio 說「同步密碼不對」</summary>
+  <div><p>勾「顯示密碼」看看有沒有打錯，大小寫、全形半形都要一樣。真的忘記的話，回到第 5 步把 <code>SYNC_TOKEN</code> 改成新密碼，再到每台裝置重新輸入。</p></div>
+</details>
+<details>
+  <summary>「連不上同步伺服器」</summary>
+  <div><p>確認網路正常，而且是從你自己的網址（<code>folio.你的子網域.workers.dev</code>）打開 Folio，不是從別的地方。</p></div>
+</details>
+<details>
+  <summary>iPad 上看不到新功能</summary>
+  <div><p>把 Folio 從背景完全關掉（從螢幕下方往上滑，把 Folio 往上滑掉），再打開一兩次。按右上角 <span class="btn">⋯</span>，面板最下面會顯示版本號。</p></div>
+</details>
+
+<h3>把問題丟給 Claude</h3>
+<p>還是卡住的話，把下面這段複製到 <a href="https://claude.ai" target="_blank" rel="noopener">claude.ai</a> 的對話框，把<b>【】</b>裡的內容換成你的狀況，最好再附上一張畫面截圖：</p>
+<div class="copy"><code class="prompt">我是完全不會寫程式的新手，正在照一份教學架設 Folio 筆記 App（從 GitHub 的 antony910911/folio Fork 一份，部署到 Cloudflare Workers，用 SYNC_TOKEN 當同步密碼）。
+我做到【第幾步、在做什麼】，畫面顯示【貼上畫面上的文字或附截圖】。
+請用簡單的中文，一步一步告訴我下一步要按哪裡。</code><button type="button" data-copy-from="prev">複製</button></div>
+
+<hr>
+<div class="card">
+  <b>最後檢查一下 ✔</b>
+  <ul class="check">
+    <li>GitHub 上有 <code>你的使用者名稱/folio</code></li>
+    <li>Cloudflare 上有一個叫 <code>folio</code> 的 Worker，打開網址看得到 Folio</li>
+    <li><code>SYNC_TOKEN</code> 是 Secret 類型</li>
+    <li>iPad 主畫面有 Folio 圖示，側邊欄最下面顯示「已同步」</li>
+    <li>同步密碼記在安全的地方，沒有給別人</li>
+  </ul>
+</div>
+
+<footer>Folio · 這份教學也在 Folio 的程式碼裡（setup.html），Fork 之後你的網址也會有一份。</footer>
+</div>
+<script>
+// 複製按鈕
+for (const b of document.querySelectorAll('.copy button')) {
+  b.addEventListener('click', async () => {
+    const text = b.dataset.copy ?? b.previousElementSibling.textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const t = document.createElement('textarea');
+      t.value = text;
+      document.body.appendChild(t);
+      t.select();
+      try { document.execCommand('copy'); } catch { /* 至少選起來了，可以手動複製 */ }
+      t.remove();
+    }
+    const old = b.textContent;
+    b.textContent = '已複製';
+    b.classList.add('done');
+    setTimeout(() => { b.textContent = old; b.classList.remove('done'); }, 1600);
+  });
+}
+</script>
+</body>
+</html>

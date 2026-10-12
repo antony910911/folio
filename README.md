@@ -40,6 +40,8 @@
 
 ## 部署到 Cloudflare（含跨裝置同步）
 
+> 給不熟 GitHub 和 Cloudflare 的人：[`setup.html`](setup.html) 是一步一步的圖文教學（部署後在 `https://folio.<子網域>.workers.dev/setup.html`，或 App 裡「⋯ › 教朋友架一份」）。
+
 App 和同步伺服器放在同一個 Cloudflare Worker。免費方案就夠個人使用。
 
 1. Cloudflare 後台 › **Workers & Pages** › **Create** › **Import a repository**，選 `folio` 這個 repo。設定都用預設值（部署指令是 `npx wrangler deploy`，會讀 `wrangler.jsonc`）。之後每次推到 `main` 都會自動部署。
