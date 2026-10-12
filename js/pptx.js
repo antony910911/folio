@@ -429,12 +429,40 @@ export async function openPptx(file) {
     });
   }
 
+  // 外陰影（PowerPoint 最常見的效果）：畫布的陰影是螢幕像素，不跟著座標縮放，要自己乘上 K
+  function shadowOf(spPr, style, ctx) {
+    let sh = path(spPr, 'effectLst', 'outerShdw');
+    if (!sh && !kid(spPr, 'effectLst')) {
+      const ref = kid(style, 'effectRef');
+      const idx = num(ref, 'idx', 0);
+      if (idx > 0) sh = path(kids(path(ctx.fmt, 'effectStyleLst'), 'effectStyle')[idx - 1], 'effectLst', 'outerShdw');
+    }
+    if (!sh) return null;
+    const color = colorOf(sh, ctx, hexOf(kid(style, 'effectRef'), ctx)) || 'rgba(0,0,0,0.35)';
+    const dist = num(sh, 'dist', 0);
+    const dir = (num(sh, 'dir', 0) / 60000) * Math.PI / 180;
+    return { color, blur: num(sh, 'blurRad', 0), dx: Math.cos(dir) * dist, dy: Math.sin(dir) * dist };
+  }
+  function withShadow(g, sh, fn) {
+    if (!sh) return fn();
+    // 陰影位移要用畫布目前的縮放換算（群組裡的圖形也一樣）
+    const m = g.getTransform();
+    g.save();
+    g.shadowColor = sh.color;
+    g.shadowBlur = sh.blur * Math.hypot(m.a, m.b);
+    g.shadowOffsetX = sh.dx * m.a + sh.dy * m.c;
+    g.shadowOffsetY = sh.dx * m.b + sh.dy * m.d;
+    try { return fn(); } finally { g.restore(); }
+  }
+
   async function drawPicture(g, el, ctx) {
     const b = xfrmOf(el, ctx);
     if (!b) return;
     const blipFill = kid(el, 'blipFill');
     const img = await blipImage(blipFill, ctx);
     await withTransform(g, b, async () => {
+      const sh = shadowOf(kid(el, 'spPr'), kid(el, 'style'), ctx);
+      if (sh) withShadow(g, sh, () => { g.beginPath(); geometryPath(g, kid(el, 'spPr'), b); g.fillStyle = '#ffffff'; g.fill(); });
       g.save();
       g.beginPath();
       geometryPath(g, kid(el, 'spPr'), b);
@@ -454,10 +482,11 @@ export async function openPptx(file) {
     await withTransform(g, b, async () => {
       const shapePath = () => geometryPath(g, spPr, b);
       const fillRef = kid(style, 'fillRef');
-      let filled = await paintFill(g, spPr, ctx, shapePath, b);
+      const sh = shadowOf(spPr, style, ctx);
+      const filled = sh ? await withShadow(g, sh, () => paintFill(g, spPr, ctx, shapePath, b)) : await paintFill(g, spPr, ctx, shapePath, b);
       if (!filled && !kid(spPr, 'noFill') && fillRef && num(fillRef, 'idx') > 0 && el.localName === 'sp') {
         const c = colorOf(fillRef, ctx);
-        if (c) { g.beginPath(); shapePath(); g.fillStyle = c; g.fill(); }
+        if (c) withShadow(g, sh, () => { g.beginPath(); shapePath(); g.fillStyle = c; g.fill(); });
       }
       strokeLine(g, spPr, ctx, shapePath, style, el.localName === 'cxnSp');
     });
@@ -1159,8 +1188,68 @@ export async function openPptx(file) {
     return text.slice(0, 80);
   }
 
+  // ---------- 匯入前檢查：哪些東西畫不出來 ----------
+  const fontCanvas = document.createElement('canvas').getContext('2d');
+  function fontInstalled(name) {
+    const sample = 'abcmmmWWWiii12345中文字體測試';
+    return ['monospace', 'serif'].some((base) => {
+      fontCanvas.font = `40px ${base}`;
+      const w0 = fontCanvas.measureText(sample).width;
+      fontCanvas.font = `40px "${name.replace(/"/g, '')}", ${base}`;
+      return fontCanvas.measureText(sample).width !== w0;
+    });
+  }
+  async function scan() {
+    const found = new Map(); // 說明 → Set(投影片號碼)
+    const add = (label, n) => { if (!found.has(label)) found.set(label, new Set()); found.get(label).add(n); };
+    const fonts = new Map();
+    for (const [i, part] of slideParts.entries()) {
+      const n = i + 1;
+      const ctx = await context(part);
+      for (const [doc, r] of [[ctx.slide, ctx.sRels], [ctx.layout, ctx.lRels], [ctx.master, ctx.mRels]]) {
+        if (!doc) continue;
+        // 只看真的有被用到的圖片
+        for (const blip of descendants(doc, 'blip')) {
+          const id = [...blip.attributes].find((a) => a.localName === 'embed')?.value;
+          const t = id && r.get(id)?.target;
+          if (t && /\.(emf|wmf|tiff?)$/i.test(t)) add('EMF／WMF 圖片（常見於從 Word、Excel 複製過來的圖），會顯示成灰框', n);
+        }
+      }
+      const doc = ctx.slide;
+      for (const gd of descendants(doc, 'graphicData')) {
+        const uri = attr(gd, 'uri') || '';
+        if (/ole/i.test(uri)) add('內嵌物件（例如 Excel 表格、方程式）', n);
+        if (/chart/.test(uri)) {
+          const c = descendants(gd, 'chart')[0];
+          const id = c && [...c.attributes].find((a) => a.localName === 'id')?.value;
+          const target = id && ctx.sRels.get(id)?.target;
+          const plot = target && path(await xml(target), 'chart', 'plotArea');
+          const kinds = plot ? [...plot.children].filter((e) => /Chart$/.test(e.localName)).map((e) => e.localName) : [];
+          if (!kinds.length || kinds.some((k) => !/^(bar|bar3D|line|line3D|area|area3D|pie|pie3D|doughnut|ofPie)Chart$/.test(k))) add('特殊圖表（散佈圖、雷達圖、組合圖等），會顯示成灰框', n);
+        }
+      }
+      if (descendants(doc, 'prstTxWarp').some((w) => attr(w, 'prst') !== 'textNoShape')) add('文字藝術師（彎曲的文字）', n);
+      if (descendants(doc, 'glow').length || descendants(doc, 'reflection').length || descendants(doc, 'sp3d').some((x) => x.children.length || x.attributes.length)) add('光暈、倒影、立體等特效', n);
+      for (const f of [...descendants(doc, 'latin'), ...descendants(doc, 'ea')]) {
+        const face = attr(f, 'typeface');
+        if (face && !face.startsWith('+')) { if (!fonts.has(face)) fonts.set(face, new Set()); fonts.get(face).add(n); }
+      }
+      for (const face of [ctx.fonts.major, ctx.fonts.minor, ctx.fonts.majorEa, ctx.fonts.minorEa]) {
+        if (face) { if (!fonts.has(face)) fonts.set(face, new Set()); fonts.get(face).add(n); }
+      }
+    }
+    const missing = [...fonts.keys()].filter((f) => !fontInstalled(f));
+    if (missing.length) {
+      const slides = new Set(missing.flatMap((f) => [...fonts.get(f)]));
+      found.set(`這台裝置沒有的字型（${missing.slice(0, 4).join('、')}${missing.length > 4 ? '…' : ''}），會換成思源黑體，換行位置可能不同`, slides);
+    }
+    return [...found].map(([label, set]) => ({ label, slides: [...set].sort((a, b) => a - b) }));
+  }
+  const warnings = await scan().catch((e) => { console.warn(e); return []; });
+
   return {
     count: slideParts.length,
+    warnings,
     render,
     titleOf,
     destroy() {

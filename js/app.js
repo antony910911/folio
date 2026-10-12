@@ -307,7 +307,7 @@ $('more').addEventListener('click', (e) => {
 });
 
 // 版本和字型狀態：各台裝置版面對不起來時，先確認是不是都更新到同一版
-const APP_VERSION = 'v25';
+const APP_VERSION = 'v26';
 function versionLine() {
   const font = !document.fonts || !document.fonts.check ? '' : document.fonts.check('16px "Noto Sans TC"', '筆記')
     ? '筆記字型已載入' : '筆記字型還沒載入（正在用系統字型，換行可能和其他裝置不同）';
@@ -1463,7 +1463,7 @@ async function importPdf(file, kind = 'pdf') {
   if (!pdf.count) { pdf.destroy(); throw new Error('這個檔案裡沒有任何頁面。'); }
   try {
     hideToast();
-    const choice = await askPdfOptions(file.name, pdf.count, isPptx);
+    const choice = await askPdfOptions(file.name, pdf.count, isPptx, pdf.warnings || []);
     if (!choice) return;
     const pageNumbers = parsePageRange(choice.range, pdf.count);
     if (!pageNumbers) { toast('頁數範圍看不懂，請寫成像「1-5, 8」這樣。'); return; }
@@ -1498,11 +1498,19 @@ async function importPdf(file, kind = 'pdf') {
   }
 }
 
-function askPdfOptions(name, count, isPptx = false) {
+function askPdfOptions(name, count, isPptx = false, warnings = []) {
+  const slideList = (list) => (list.length > 8 ? `第 ${list.slice(0, 8).join('、')}… 張` : `第 ${list.join('、')} 張`);
   dlgForm.innerHTML = `
     <h2 class="dlg-title">匯入「${esc(name)}」</h2>
     <p class="dlg-msg">共 ${count} ${isPptx ? '張投影片' : '頁'}。每一頁會變成一張圖片，可以直接用筆在上面寫。</p>
-    ${isPptx ? '<p class="dlg-hint">簡報是在這台裝置上直接畫出來的，字型或特殊效果可能和 PowerPoint 有一點不同；圖表、動畫不會顯示。要完全一樣，請在 PowerPoint 另存成 PDF 再匯入。</p>' : ''}
+    ${isPptx && warnings.length ? `<div class="pptx-warn"><b>這份簡報有些地方會和 PowerPoint 不一樣：</b><ul>${warnings.map((w) => `<li>${esc(w.label)}<small>${esc(slideList(w.slides))}</small></li>`).join('')}</ul>要和原本一模一樣：先把簡報存成 PDF 再匯入 PDF（做法見下面）。</div>` : ''}
+    ${isPptx ? `<details class="pptx-how"><summary>${warnings.length ? '怎麼把簡報存成 PDF？' : '畫出來和原本不一樣？改用 PDF 匯入'}</summary>
+      <ul>
+        <li><b>電腦的 PowerPoint</b>：檔案 › 另存新檔（或匯出）› 選 PDF</li>
+        <li><b>iPad 的 Keynote（免費）</b>：用 Keynote 打開 .pptx › 右上角「⋯」› 輸出 › PDF</li>
+        <li><b>iPad 的「檔案」App</b>：點開 .pptx 預覽 › 分享 › 列印 › 點列印畫面上的分享按鈕（舊版 iOS：在預覽上兩指張開再分享）› 儲存到檔案，存下來的就是 PDF</li>
+      </ul>
+      存好之後，在 Folio 用同一個按鈕匯入那個 PDF，看起來就會和原本完全一樣。</details>` : ''}
     <div class="import-opts" role="radiogroup" aria-label="放在哪裡">
       <label class="import-opt"><input type="radio" name="pdf-mode" value="here" checked><span>全部放在這一頁<small>由上往下排，適合邊看簡報邊寫筆記</small></span></label>
       <label class="import-opt"><input type="radio" name="pdf-mode" value="pages"><span>每一頁建立一個新頁面<small>${isPptx ? '頁面標題用投影片的標題' : '頁面標題是「檔名 第 n 頁」'}</small></span></label>

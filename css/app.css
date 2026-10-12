@@ -1142,3 +1142,11 @@ body.view-locked #tools, body.view-locked #tool-opts { opacity: .45; }
 
 /* 拖曳捲動時讓頁面在獨立圖層上移動，比較順 */
 .viewport.panning .surface { will-change: transform; }
+
+/* 匯入簡報：畫不出來的東西先告訴使用者 */
+.pptx-warn { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, #d98b2b 12%, transparent); font-size: 13.5px; line-height: 1.55; }
+.pptx-warn ul { margin: 6px 0; padding-left: 18px; }
+.pptx-warn li small { display: block; color: var(--muted); font-size: 12px; }
+.pptx-how { margin: 0 0 12px; font-size: 13.5px; color: var(--muted); }
+.pptx-how summary { cursor: pointer; color: var(--accent); font-weight: 600; padding: 4px 0; }
+.pptx-how ul { margin: 6px 0; padding-left: 18px; }
