@@ -48,6 +48,7 @@ let prefs = {
   sidebar: true,
   viewLock: false, // 鎖定畫面：只能捲動和縮放
   lockFab: null, // 懸浮鎖定按鈕：null = 觸控裝置預設顯示
+  tapCloseSidebar: null, // 點頁面收起側邊欄：null = 觸控裝置預設開啟
   fabPos: null, // { side: 'left' | 'right', y: 0~1 }
   last: {},
 };
@@ -273,6 +274,7 @@ $('more').addEventListener('click', (e) => {
         title: '清單與檢視',
         tiles: [
           { icon: prefs.viewLock ? 'lock' : 'unlock', label: '鎖定畫面', sub: prefs.viewLock ? '只能捲動、縮放' : '防止誤觸', on: prefs.viewLock, disabled: noPage, stay: true, action: () => setViewLock(!prefs.viewLock) },
+          { icon: 'sidebar', label: '點頁面收起側邊欄', sub: '寬螢幕時', on: tapClosesSidebar(), stay: true, action: toggleTapCloseSidebar },
           { icon: 'fab', label: '懸浮鎖定按鈕', sub: '可以拖到任何位置', on: fabEnabled(), stay: true, action: toggleFab },
           { icon: 'sortDone', label: '打勾的移到最下面', on: prefs.checkedToBottom, stay: true, action: toggleCheckedToBottom },
           { icon: 'zoomIn', label: '放大', disabled: noPage, stay: true, action: () => editor.zoomBy(1.25) },
@@ -302,7 +304,7 @@ $('more').addEventListener('click', (e) => {
 });
 
 // 版本和字型狀態：各台裝置版面對不起來時，先確認是不是都更新到同一版
-const APP_VERSION = 'v20';
+const APP_VERSION = 'v21';
 function versionLine() {
   const font = !document.fonts || !document.fonts.check ? '' : document.fonts.check('16px "Noto Sans TC"', '筆記')
     ? '筆記字型已載入' : '筆記字型還沒載入（正在用系統字型，換行可能和其他裝置不同）';
@@ -667,6 +669,30 @@ fab.addEventListener('pointerdown', (e) => {
 fab.addEventListener('click', (e) => e.preventDefault()); // 鍵盤操作（Enter／空白鍵）才走這裡
 fab.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setViewLock(!prefs.viewLock); } });
 window.addEventListener('resize', () => { if (!fab.hidden) placeFab(); });
+
+// ---------- 點頁面收起側邊欄 ----------
+// 窄螢幕的側邊欄本來就是抽屜（點旁邊的陰影會關）；寬螢幕上側邊欄固定在左邊，這裡讓點一下頁面就收起來。
+// 那一下只用來收側邊欄，不會畫到線或點進文字框（收起後頁面會往左移，照原位置畫會畫錯地方）
+function tapClosesSidebar() { return prefs.tapCloseSidebar == null ? coarse.matches : prefs.tapCloseSidebar; }
+function toggleTapCloseSidebar() {
+  prefs.tapCloseSidebar = !tapClosesSidebar();
+  savePrefs();
+  toast(prefs.tapCloseSidebar ? '點一下頁面就會收起側邊欄。' : '點頁面不會再收起側邊欄。');
+}
+let swallowClickUntil = 0;
+editorEl.parentElement.addEventListener('pointerdown', (e) => {
+  if (narrow.matches || !isSidebarOpen() || !tapClosesSidebar()) return;
+  if (e.target.closest('.scrollbar, .selbar, .mmbar') || editorEl.hidden) return;
+  e.preventDefault();
+  e.stopPropagation();
+  swallowClickUntil = Date.now() + 600;
+  prefs.sidebar = false;
+  savePrefs();
+  applySidebar();
+}, true);
+editorEl.parentElement.addEventListener('click', (e) => {
+  if (Date.now() < swallowClickUntil) { e.preventDefault(); e.stopPropagation(); }
+}, true);
 
 // 鎖定中按了畫筆、插入、復原這些會改內容的按鈕：先自動解除鎖定
 $('toolbar').addEventListener('click', (e) => {
