@@ -5,6 +5,7 @@
 // 存取要帶同步密碼（SYNC_TOKEN，在 Cloudflare 後台設成 Secret）。
 
 import { DurableObject } from 'cloudflare:workers';
+import { parseInboxRequest, INBOX_NOTEBOOK } from '../js/inboxmodel.js';
 
 const CHUNK = 1_000_000; // 每塊圖片 1 MB（SQLite 單列上限 2 MB）
 const MAX_ASSET = 25_000_000;
@@ -15,6 +16,18 @@ export default {
     const url = new URL(request.url);
     if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(request) });
+    // 收件匣：給 Claude、ChatGPT 用的入口，用另一把只能「新增頁面」的鑰匙（INBOX_TOKEN），不需要同步密碼
+    if (url.pathname === '/api/inbox/openapi.json' && request.method === 'GET') return json(request, openapi(url.origin));
+    if (url.pathname === '/api/inbox') {
+      if (request.method !== 'POST') return json(request, { error: 'use_post' }, 405);
+      const inboxToken = (env.INBOX_TOKEN || '').trim();
+      if (!inboxToken) return json(request, { error: 'inbox_not_configured', message: 'Cloudflare 上還沒有設定 INBOX_TOKEN' }, 503);
+      if (!(await authorized(request, inboxToken))) return json(request, { error: 'unauthorized', message: '收件匣鑰匙不對' }, 401);
+      const res = await env.LIBRARY.getByName('main').fetch(request);
+      const out = new Response(res.body, res);
+      for (const [k, v] of Object.entries(cors(request))) out.headers.set(k, v);
+      return out;
+    }
     // 在後台貼上密碼時常會多帶空白或換行，前後的空白不算
     const token = (env.SYNC_TOKEN || '').trim();
     if (!token) return json(request, { error: 'not_configured' }, 503);
@@ -67,6 +80,43 @@ function cors(request) {
   };
 }
 
+// 給 ChatGPT 自訂 GPT 的「動作（Actions）」匯入用的說明
+function openapi(origin) {
+  return {
+    openapi: '3.1.0',
+    info: { title: 'Folio 收件匣', version: '1.0.0', description: '把整理好的資料新增成 Folio 筆記的一頁。' },
+    servers: [{ url: origin }],
+    paths: {
+      '/api/inbox': {
+        post: {
+          operationId: 'addFolioNote',
+          summary: '新增一頁筆記到 Folio 的「收件匣」筆記本',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['title', 'content'],
+                  properties: {
+                    title: { type: 'string', description: '頁面標題，簡短。' },
+                    content: { type: 'string', description: '內容，用 Markdown：# 標題、- 清單、1. 編號、- [ ] 待辦、**粗體**、[文字](網址)。' },
+                    section: { type: 'string', description: '要放進「收件匣」裡的哪個分區，沒有會自動建立。預設「AI 匯入」。' },
+                    source: { type: 'string', description: '資料來源網址（選填）。' },
+                  },
+                },
+              },
+            },
+          },
+          responses: { 200: { description: '已新增' }, 401: { description: '收件匣鑰匙不對' } },
+          security: [{ inboxKey: [] }],
+        },
+      },
+    },
+    components: { securitySchemes: { inboxKey: { type: 'http', scheme: 'bearer' } } },
+  };
+}
+
 function json(request, body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...cors(request) } });
 }
@@ -103,6 +153,7 @@ export class Library extends DurableObject {
     const path = url.pathname;
     try {
       if (path === '/api/ws') return this.connect(request);
+      if (path === '/api/inbox' && request.method === 'POST') return this.inbox(request);
       if (path === '/api/status' && request.method === 'GET') return this.status(request);
       if (path === '/api/changes' && request.method === 'GET') return this.pull(request, url);
       if (path === '/api/changes' && request.method === 'POST') return this.push(request);
@@ -150,6 +201,53 @@ export class Library extends DurableObject {
     });
     if (accepted) this.notify(request.headers.get('X-Folio-Device'));
     return json(request, { accepted, seq: this.seq });
+  }
+
+  // 收件匣：在「收件匣」筆記本的分區裡新增一頁（最新的放最上面），裡面一個文字框
+  async inbox(request) {
+    let body;
+    try { body = await request.json(); } catch { return json(request, { error: 'bad_json', message: '內容要是 JSON' }, 400); }
+    const req = parseInboxRequest(body);
+    if (req.error) return json(request, { error: req.error }, 400);
+    const now = Date.now();
+    // rev 要比資料庫裡所有的都新（各裝置的時鐘可能比伺服器快）
+    const maxRev = this.sql.exec('SELECT MAX(rev) AS r FROM records').one().r || '';
+    let ms = Math.max(now, maxRev ? parseInt(maxRev.split('.')[0], 36) + 1 : 0);
+    let counter = 0;
+    const rev = () => `${ms.toString(36).padStart(10, '0')}.${(counter++).toString(36).padStart(4, '0')}.inbox`;
+    const id = (p) => p + crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+    const live = (prefix) => this.sql.exec("SELECT data FROM records WHERE key LIKE ? AND deleted = 0", prefix + '%').toArray().map((r) => JSON.parse(r.data)).filter(Boolean);
+    const records = [];
+
+    const notebooks = live('nb:');
+    let nb = notebooks.find((n) => n.inbox) || notebooks.find((n) => n.name === INBOX_NOTEBOOK);
+    if (!nb) {
+      nb = { id: id('nb_'), name: INBOX_NOTEBOOK, inbox: true, order: Math.max(1000, notebooks.reduce((m, n) => Math.max(m, n.order ?? 0), 0) + 1), createdAt: now, updatedAt: now };
+      records.push({ key: `nb:${nb.id}`, data: nb });
+    }
+    const sections = live('sc:').filter((x) => x.notebookId === nb.id);
+    let sc = sections.find((x) => x.name === req.section);
+    if (!sc) {
+      const colors = ['#3d6fd8', '#d9534f', '#2f9e6e', '#d98b2b', '#8a5cd1', '#c2478f', '#2b9bb3', '#6b7280'];
+      sc = { id: id('sc_'), notebookId: nb.id, name: req.section, color: colors[sections.length % colors.length], order: sections.reduce((m, x) => Math.max(m, x.order ?? 0), 0) + 1, createdAt: now, updatedAt: now };
+      records.push({ key: `sc:${sc.id}`, data: sc });
+    }
+    const pages = live('pg:').filter((x) => x.sectionId === sc.id);
+    const page = { id: id('pg_'), sectionId: sc.id, title: req.title, background: 'ruled', order: pages.reduce((m, x) => Math.min(m, x.order ?? 0), 1) - 1, createdAt: now, updatedAt: now };
+    const item = { id: id('t_'), type: 'text', x: 64, y: 140, w: 680, html: req.html };
+    records.push({ key: `pg:${page.id}`, data: page }, { key: `it:${page.id}:${item.id}`, data: item });
+
+    this.ctx.storage.transactionSync(() => {
+      for (const r of records) {
+        this.seq += 1;
+        this.sql.exec(
+          'INSERT INTO records (key, rev, deleted, data, seq) VALUES (?, ?, 0, ?, ?) ON CONFLICT(key) DO UPDATE SET rev = excluded.rev, deleted = 0, data = excluded.data, seq = excluded.seq',
+          r.key, rev(), JSON.stringify(r.data), this.seq,
+        );
+      }
+    });
+    this.notify(null);
+    return json(request, { ok: true, notebook: nb.name, section: sc.name, page: page.title });
   }
 
   checkAssets(request) {

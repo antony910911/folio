@@ -298,7 +298,7 @@ $('more').addEventListener('click', (e) => {
           { icon: 'download', label: '匯出備份', action: exportBackup },
           { icon: 'upload', label: '匯入備份', action: () => $('import-file').click() },
           // 教別人自己架一份（預覽環境裡沒有這個頁面）
-          ...(globalThis.FOLIO_VENDOR ? [] : [{ icon: 'share', label: '教朋友架一份', sub: '逐步教學網頁', action: () => window.open('setup.html', '_blank', 'noopener') }]),
+          ...(globalThis.FOLIO_VENDOR ? [] : [{ icon: 'share', label: '架設與進階教學', sub: '教朋友架一份、AI 自動匯入', action: () => window.open('setup.html', '_blank', 'noopener') }]),
         ],
       },
     ];
@@ -306,7 +306,7 @@ $('more').addEventListener('click', (e) => {
 });
 
 // 版本和字型狀態：各台裝置版面對不起來時，先確認是不是都更新到同一版
-const APP_VERSION = 'v22';
+const APP_VERSION = 'v23';
 function versionLine() {
   const font = !document.fonts || !document.fonts.check ? '' : document.fonts.check('16px "Noto Sans TC"', '筆記')
     ? '筆記字型已載入' : '筆記字型還沒載入（正在用系統字型，換行可能和其他裝置不同）';

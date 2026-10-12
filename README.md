@@ -54,6 +54,22 @@ App 和同步伺服器放在同一個 Cloudflare Worker。免費方案就夠個�
 
 在 claude.ai 預覽裡寫的筆記不會自動出現在新網址：先在預覽裡「⋯ › 匯出備份」，再到新網址「⋯ › 匯入備份」，開了同步的話會一起傳上雲端。
 
+## 收件匣：讓 Claude、ChatGPT 把資料存進 Folio
+
+`POST /api/inbox` 會在「收件匣」筆記本（第一次用時自動建立）新增一頁，所有開著同步的裝置幾秒內就會看到。用另一把只能新增、不能讀的鑰匙 `INBOX_TOKEN`（Cloudflare 上設成 Secret），不需要同步密碼。
+
+```sh
+curl -X POST https://folio.<子網域>.workers.dev/api/inbox \
+  -H "Authorization: Bearer $FOLIO_INBOX_TOKEN" -H "Content-Type: application/json" \
+  -d '{"title":"今日重點","section":"每日新聞","source":"https://…","content":"# 標題\n- 重點一\n- [ ] 待辦"}'
+```
+
+- `content` 是 Markdown（標題、清單、巢狀清單、`- [ ]` 勾選清單、粗體斜體刪除線、連結、引用、表格），轉成文字框（`js/inboxmodel.js`，有測試）。
+- `section` 不給的話是「AI 匯入」；同名的分區會沿用。新的一頁放在分區最上面。
+- `GET /api/inbox/openapi.json` 給 ChatGPT 自訂 GPT 的「動作」直接匯入。
+- Claude Code 的 skill 在 `.claude/skills/folio-inbox/`，排程（Routines）可以每天自動整理資料存進來。
+- 一步一步的設定教學在 [`setup.html`](setup.html) 第 10 步。
+
 ## 跨裝置同步怎麼運作
 
 - 每台裝置都先存在本機，沒網路時照常可以用；連上網後自動把變更送出、把別台的變更拿回來。
@@ -114,6 +130,7 @@ js/model.js           資料模型（純函式）：建立項目、排序、連�
 js/store.js           IndexedDB 存取
 js/layout.js          版面計算（純函式）：筆跡分群、閱讀順序、文字格式解析、投影片切頁
 js/inkrender.js       把筆跡畫成 PNG（匯出和辨識共用）
+js/inboxmodel.js      收件匣：Markdown 轉文字框、檢查送進來的資料
 js/lock.js            筆記本密碼（PBKDF2 雜湊）、選要打開哪一本
 js/exporter.js        匯出 PowerPoint／Word、存檔（iPad 用分享選單）
 js/pdfexport.js       匯出 PDF：把每一頁畫成 A4 圖片

@@ -136,6 +136,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 40px 0; }
     <li><a href="#s7">7.（選用）手寫轉文字</a></li>
     <li><a href="#s8">8. 之後怎麼更新</a></li>
     <li><a href="#s9">9.（進階）請 Claude 幫你改</a></li>
+    <li><a href="#s10">10.（進階）讓 AI 自動存資料進 Folio</a></li>
     <li><a href="#help">卡住了怎麼辦</a></li>
   </ul>
 </div>
@@ -280,6 +281,122 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 40px 0; }
 <div class="step"><div class="num">4</div><div class="body"><p>Claude 改好、推上 GitHub 後，Cloudflare 會自動部署。重開 Folio 就能看到。</p></div></div>
 <div class="note warn"><b>改之前先備份</b>在 Folio 按 <span class="btn">⋯</span> › <span class="btn">匯出備份</span> 存一份檔案。萬一改壞了，筆記還在。<br>你改的只是<b>你自己那一份</b>，不會影響原作者的 Folio。</div>
 
+<!-- ============ 10 進階 ============ -->
+<h2 id="s10"><span class="part-head">10. 進階：讓 AI 自動把資料存進 Folio <span class="tag opt">進階・選用</span></span></h2>
+<p>設定好之後，你可以叫 Claude 或 ChatGPT 去找資料、整理重點，然後<b>直接存成 Folio 的一頁</b>。例如：</p>
+<ul>
+  <li>每天早上 8 點，自動整理你關心的新聞，你打開 iPad 就看得到</li>
+  <li>每週一整理某個領域的新論文或新法規</li>
+  <li>看到一篇好文章，跟 AI 說「幫我摘要存到 Folio」</li>
+</ul>
+<div class="glossary">
+  <div class="card"><b>📥 收件匣</b><span>AI 送來的資料會放在一本叫「<b>收件匣</b>」的筆記本裡（第一次送就會自動出現），可以再依主題分成不同分區，最新的在最上面。</span></div>
+  <div class="card"><b>🗝 收件匣鑰匙</b><span>另外一組密碼，<b>只能新增頁面</b>，不能讀、也不能改你的其他筆記。給 AI 用的是這把，<b>不是同步密碼</b>。</span></div>
+  <div class="card"><b>🧩 Skill（技能）</b><span>一份寫給 Claude 看的說明書，教它怎麼把資料送進 Folio。已經放在 Folio 的程式碼裡了（<code>folio-inbox</code>），你 Fork 的時候就一起有了。</span></div>
+  <div class="card"><b>⏰ 排程</b><span>讓 Claude 在固定時間自己做事。它在雲端執行，你的電腦、iPad 不用開著。</span></div>
+</div>
+
+<h3 id="s10a">10-1. 設定收件匣鑰匙（一定要做）</h3>
+<div class="step"><div class="num">1</div><div class="body">
+  <p>先產生一組夠長、不好猜的鑰匙（按按鈕會在你的瀏覽器裡隨機產生，不會傳到任何地方）：</p>
+  <div class="copy"><code id="gen-key">（按右邊的按鈕產生）</code><button type="button" id="gen-btn">產生</button></div>
+  <p>產生後按「複製」，先貼在記事本裡，等一下會用到好幾次。</p>
+</div></div>
+<div class="step"><div class="num">2</div><div class="body">
+  <p>到 Cloudflare 的 <code>folio</code> › <span class="btn">Settings</span> › <b>Variables and Secrets</b> › <span class="btn">Add</span>，跟第 5 步一樣，只是名稱不同：</p>
+  <ul>
+    <li><b>Type</b>：<b>Secret</b></li>
+    <li><b>Variable name</b>：<div class="copy"><code>INBOX_TOKEN</code><button type="button" data-copy="INBOX_TOKEN">複製</button></div></li>
+    <li><b>Value</b>：剛剛產生的收件匣鑰匙</li>
+  </ul>
+  <p>按 <span class="btn">Deploy</span>。</p>
+</div></div>
+<div class="step"><div class="num">3</div><div class="body">
+  <p><b>測試一下</b>：在這裡貼上收件匣鑰匙，按「送出測試」。成功的話，打開 Folio 就會看到「收件匣」筆記本裡多了一頁。</p>
+  <div class="copy"><input type="password" id="test-key" placeholder="貼上收件匣鑰匙" autocomplete="off" style="flex:1;min-width:0;border:0;background:none;padding:9px 12px;font:inherit;color:inherit"><button type="button" id="test-btn">送出測試</button></div>
+  <p id="test-msg" class="note tip" hidden></p>
+  <p><small>這個測試只能在你自己的 Folio 網址（<code>…workers.dev/setup.html</code>）上用。</small></p>
+</div></div>
+
+<h3 id="s10b">10-2. 用 Claude 每天自動整理（排程）</h3>
+<p>需要 Claude 的付費方案。Claude 會在雲端開一台臨時電腦幫你做事，所以要先告訴那台電腦「Folio 在哪」和「收件匣鑰匙」。</p>
+<div class="step"><div class="num">1</div><div class="body"><p>打開 <a href="https://claude.ai/code" target="_blank" rel="noopener">claude.ai/code</a>，選你自己的 <code>你的使用者名稱/folio</code> 倉庫（跟第 9 步一樣）。</p></div></div>
+<div class="step"><div class="num">2</div><div class="body">
+  <p>打開<b>雲端環境設定</b>：在對話畫面上方的標題列，點<b>雲端環境的選單</b>，選 <span class="btn">Edit</span>（編輯）。</p>
+</div></div>
+<div class="step"><div class="num">3</div><div class="body">
+  <p><b>讓它連得到你的 Folio</b>：找到 <b>Network access</b>（網路存取）：</p>
+  <ul>
+    <li>選 <b>Limited</b>，在 <b>Allowed domains</b>（允許的網域）加上你的 Folio 網域，例如 <code>folio.你的子網域.workers.dev</code>（不要加 https://）。</li>
+    <li>「Allow package managers」那個勾勾<b>保持勾著</b>。</li>
+  </ul>
+</div></div>
+<div class="step"><div class="num">4</div><div class="body">
+  <p><b>告訴它 Folio 在哪、鑰匙是什麼</b>：在 <b>Environment variables</b>（環境變數）加這兩行（換成你自己的）：</p>
+  <div class="copy"><code class="prompt">FOLIO_URL=https://folio.你的子網域.workers.dev
+FOLIO_INBOX_TOKEN=你的收件匣鑰匙</code><button type="button" data-copy-from="prev">複製</button></div>
+  <p>儲存。</p>
+  <div class="note warn"><b>鑰匙只貼在這裡</b>不要把鑰匙直接打在對話裡，對話內容會被保存。</div>
+</div></div>
+<div class="step"><div class="num">5</div><div class="body">
+  <p><b>開一個新對話</b>（設定要新對話才會生效），直接用中文告訴 Claude 你要什麼。下面是幾個範例，複製後改成你要的主題和時間：</p>
+  <p><b>每天自動整理新聞</b></p>
+  <div class="copy"><code class="prompt">請幫我設定一個每天早上 7:50（台灣時間）執行的排程：
+搜尋過去 24 小時和「沼氣、厭氧消化、水處理 AI」有關的新聞和研究，挑出最重要的 5 則，每則用 2～3 句繁體中文摘要並附上原文連結，
+然後用 folio-inbox skill 存到 Folio 的「每日新聞」分區，標題用「日期＋今日重點」。
+沒有新東西的話也存一頁寫「今天沒有新消息」。先幫我試跑一次。</code><button type="button" data-copy-from="prev">複製</button></div>
+  <p><b>每週整理一次</b></p>
+  <div class="copy"><code class="prompt">請設定每週一早上 8:00（台灣時間）的排程：整理上週和「________」有關的重要論文、法規或產業動態，
+分成「重點摘要」「值得追的事（用 - [ ] 待辦清單）」兩段，用 folio-inbox skill 存到 Folio 的「每週整理」分區。</code><button type="button" data-copy-from="prev">複製</button></div>
+  <p><b>單次：把一篇文章存起來</b></p>
+  <div class="copy"><code class="prompt">幫我讀這篇文章 ________（貼網址），用繁體中文整理成重點筆記（標題、5 個重點、我可以怎麼用），用 folio-inbox skill 存到 Folio 的「閱讀筆記」分區。</code><button type="button" data-copy-from="prev">複製</button></div>
+</div></div>
+<div class="step"><div class="num">6</div><div class="body"><p>Claude 會建立排程並先試跑一次。打開 Folio 的「收件匣」看看有沒有新的一頁。之後要<b>暫停、修改或刪除排程</b>，直接在 claude.ai/code 跟 Claude 說就好（例如「把每日新聞的排程改成 9 點」「刪掉每週整理的排程」）。</p></div></div>
+<div class="note tip"><b>想改 Claude 寫筆記的方式？</b>跟 Claude 說「幫我修改 folio-inbox skill：預設分區改成『學習』，每則重點最後加一行『我的想法：』」，它改好推上 GitHub 後就會一直照新的方式寫。</div>
+
+<h3 id="s10c">10-3. 用 ChatGPT「存到 Folio」</h3>
+<p>需要 ChatGPT 的付費方案（Plus 以上）才能建立自訂 GPT。做好後，在這個 GPT 裡說「把這個存到 Folio」它就會送過去。</p>
+<div class="step"><div class="num">1</div><div class="body"><p>打開 <a href="https://chatgpt.com/gpts/editor" target="_blank" rel="noopener">chatgpt.com/gpts/editor</a>（或左側「GPT」› <span class="btn">建立</span>），切到 <span class="btn">設定（Configure）</span> 分頁。</p></div></div>
+<div class="step"><div class="num">2</div><div class="body">
+  <p><b>名稱</b>填「存到 Folio」，<b>指令（Instructions）</b>貼上：</p>
+  <div class="copy"><code class="prompt">你幫我把資料整理成筆記，存到我的 Folio 筆記 App。
+使用者說「存到 Folio」或要你整理某個主題時：先查資料、整理成繁體中文重點，再呼叫 addFolioNote。
+title 要簡短並包含日期或主題；content 用 Markdown（# 標題、- 清單、- [ ] 待辦、**粗體**、[文字](網址)），每個重點附來源連結；
+section 依主題命名（例如「每日新聞」「閱讀筆記」）。不要編造查不到的內容。送出成功後告訴我存到哪個分區。</code><button type="button" data-copy-from="prev">複製</button></div>
+</div></div>
+<div class="step"><div class="num">3</div><div class="body">
+  <p>往下找到 <span class="btn">建立新動作（Create new action）</span>，按 <span class="btn">從 URL 匯入（Import from URL）</span>，貼上（換成你的網址）：</p>
+  <div class="copy"><code id="openapi-url">https://folio.你的子網域.workers.dev/api/inbox/openapi.json</code><button type="button" data-copy-from="prev">複製</button></div>
+</div></div>
+<div class="step"><div class="num">4</div><div class="body"><p><b>驗證（Authentication）</b>選 <b>API 金鑰（API Key）</b>，驗證類型選 <b>Bearer</b>，貼上收件匣鑰匙，儲存。</p></div></div>
+<div class="step"><div class="num">5</div><div class="body"><p>右上角 <span class="btn">建立（Create）</span>，分享對象選<b>只有我（Only me）</b>。</p></div></div>
+<div class="step"><div class="num">6</div><div class="body"><p>在這個 GPT 裡試試看：「幫我整理今天的 AI 新聞存到 Folio」。第一次它會問能不能連到你的網址，按 <span class="btn">允許（Allow）</span>。</p></div></div>
+<div class="note warn"><b>ChatGPT 的排程</b>ChatGPT 的排程任務（Tasks）不一定能使用自訂 GPT 的動作，所以 ChatGPT 比較適合「看到好東西時手動存」。要每天全自動，建議用上面 Claude 的排程。</div>
+
+<h3 id="s10d">10-4. 安全須知</h3>
+<ul>
+  <li>給 AI 的永遠是<b>收件匣鑰匙</b>，不要給同步密碼。收件匣鑰匙只能新增頁面，看不到你的筆記。</li>
+  <li>覺得鑰匙外流了：到 Cloudflare 把 <code>INBOX_TOKEN</code> 換成新的，再把 Claude 環境變數和 ChatGPT 動作裡的鑰匙一起換掉。</li>
+  <li>AI 整理的內容可能有錯，重要的事情請點來源連結確認。</li>
+  <li>不想讓上班時看到？收件匣也可以用「隱藏這本」或「幫這本設密碼」。</li>
+</ul>
+<details>
+  <summary>出錯了：「收件匣鑰匙不對」（401）</summary>
+  <div><p>Claude 環境變數或 ChatGPT 動作裡的鑰匙，和 Cloudflare 上的 <code>INBOX_TOKEN</code> 不一樣。重新複製貼上一次，注意前後不要有空白。</p></div>
+</details>
+<details>
+  <summary>出錯了：「還沒有設定 INBOX_TOKEN」（503）</summary>
+  <div><p>回到 10-1 第 2 步，確認名稱是 <code>INBOX_TOKEN</code>、類型是 Secret，而且有按 Deploy。</p></div>
+</details>
+<details>
+  <summary>Claude 說連不到網址、被擋住（403、proxy、host not allowed）</summary>
+  <div><p>10-2 第 3 步的 Allowed domains 沒有加到，或打錯網域。加好之後要<b>開新對話</b>才會生效。</p></div>
+</details>
+<details>
+  <summary>說成功了，但 Folio 裡找不到</summary>
+  <div><p>點左上角筆記本名稱，找「收件匣」這本。如果你把它隱藏了，選「顯示隱藏的筆記本」。也確認這台裝置有開同步（側邊欄最下面顯示「已同步」）。</p></div>
+</details>
+
 <!-- ============ help ============ -->
 <h2 id="help">卡住了怎麼辦</h2>
 <details>
@@ -329,25 +446,66 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 40px 0; }
 </div>
 <script>
 // 複製按鈕
-for (const b of document.querySelectorAll('.copy button')) {
-  b.addEventListener('click', async () => {
-    const text = b.dataset.copy ?? b.previousElementSibling.textContent;
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      const t = document.createElement('textarea');
-      t.value = text;
-      document.body.appendChild(t);
-      t.select();
-      try { document.execCommand('copy'); } catch { /* 至少選起來了，可以手動複製 */ }
-      t.remove();
-    }
-    const old = b.textContent;
-    b.textContent = '已複製';
-    b.classList.add('done');
-    setTimeout(() => { b.textContent = old; b.classList.remove('done'); }, 1600);
-  });
+async function copyText(b, text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const t = document.createElement('textarea');
+    t.value = text;
+    document.body.appendChild(t);
+    t.select();
+    try { document.execCommand('copy'); } catch { /* 至少選起來了，可以手動複製 */ }
+    t.remove();
+  }
+  const old = b.textContent;
+  b.textContent = '已複製';
+  b.classList.add('done');
+  setTimeout(() => { b.textContent = old; b.classList.remove('done'); }, 1600);
 }
+for (const b of document.querySelectorAll('.copy button')) {
+  if (b.id) continue; // 產生鑰匙、送出測試有自己的處理
+  b.addEventListener('click', () => copyText(b, b.dataset.copy ?? b.previousElementSibling.textContent));
+}
+
+// 收件匣鑰匙：在瀏覽器裡隨機產生
+document.getElementById('gen-btn').addEventListener('click', (e) => {
+  const b = e.currentTarget;
+  const code = document.getElementById('gen-key');
+  if (b.dataset.ready) return; // 已經產生過：這時按鈕是「複製」，交給下面的複製處理
+  const bytes = crypto.getRandomValues(new Uint8Array(24));
+  code.textContent = 'inbox_' + btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  b.textContent = '複製';
+  b.dataset.ready = '1';
+  b.addEventListener('click', () => copyText(b, code.textContent));
+}, { once: false });
+
+// 這一頁開在自己的 Folio 網址上時，把範例網址換成真的
+if (/workers\.dev$|^localhost$|^127\./.test(location.hostname)) {
+  document.getElementById('openapi-url').textContent = location.origin + '/api/inbox/openapi.json';
+}
+
+// 收件匣測試
+document.getElementById('test-btn').addEventListener('click', async () => {
+  const key = document.getElementById('test-key').value.trim();
+  const msg = document.getElementById('test-msg');
+  const show = (text, kind) => { msg.hidden = false; msg.className = 'note ' + kind; msg.textContent = text; };
+  if (!key) { show('先貼上收件匣鑰匙。', 'warn'); return; }
+  show('送出中…', 'tip');
+  try {
+    const res = await fetch('/api/inbox', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: '收件匣測試', section: 'AI 匯入', content: '# 成功了 🎉\n\n看到這一頁，代表收件匣已經設定好了。\n\n- [ ] 接著設定 Claude 或 ChatGPT\n- [x] 設定收件匣鑰匙' }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) show('✅ 成功！打開 Folio，看「收件匣」筆記本的「AI 匯入」分區。', 'see');
+    else if (res.status === 401) show('❌ 收件匣鑰匙不對：和 Cloudflare 上的 INBOX_TOKEN 不一樣。', 'stop');
+    else if (res.status === 503) show('❌ Cloudflare 上還沒有設定 INBOX_TOKEN，或設定後還沒按 Deploy。', 'stop');
+    else show('❌ 出錯了（' + res.status + '）：' + (data.message || data.error || '請稍後再試'), 'stop');
+  } catch {
+    show('❌ 連不上。這個測試要在你自己的 Folio 網址上打開這一頁才能用。', 'stop');
+  }
+});
 </script>
 </body>
 </html>

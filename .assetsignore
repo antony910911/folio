@@ -12,3 +12,4 @@ package.json
 package-lock.json
 wrangler.jsonc
 README.md
+.claude
