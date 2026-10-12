@@ -94,7 +94,7 @@ app.innerHTML = `
       <div class="spacer"></div>
       <button type="button" class="icon-btn" id="undo" title="復原 (⌘Z)" aria-label="復原">${icons.undo}</button>
       <button type="button" class="icon-btn" id="redo" title="重做 (⇧⌘Z)" aria-label="重做">${icons.redo}</button>
-      <button type="button" class="zoom-btn" id="zoom" title="縮放比例，點一下回到 100%">100%</button>
+      <button type="button" class="zoom-btn" id="zoom" title="縮放：點開選擇比例">100%</button>
       <button type="button" class="icon-btn" id="more" title="更多" aria-label="更多">${icons.more}</button>
     </header>
     <div class="editor-wrap">
@@ -248,7 +248,21 @@ $('tool-opts').addEventListener('click', (e) => {
 
 $('undo').addEventListener('click', () => editor.undo());
 $('redo').addEventListener('click', () => editor.redo());
-$('zoom').addEventListener('click', () => editor.resetZoom());
+// 縮放選單：常用比例、放大縮小、符合頁面寬度
+$('zoom').addEventListener('click', (e) => {
+  const z = Math.round(editor.getZoom() * 100);
+  openMenu(e.currentTarget, [
+    { row: [
+      { label: '－ 縮小', action: () => editor.zoomBy(0.8) },
+      { label: '＋ 放大', action: () => editor.zoomBy(1.25) },
+    ] },
+    { label: '符合頁面寬度', action: () => editor.zoomToFit() },
+    { sep: true },
+    ...[50, 75, 100, 125, 150, 200].map((p) => ({ label: `${p}%`, check: z === p, action: () => editor.setZoom(p / 100) })),
+    { sep: true },
+    { label: '電腦：Ctrl＋滾輪、Ctrl＋＋／－／0', disabled: true, action: () => {} },
+  ]);
+});
 
 // 「⋯」設定面板：圖示分門別類排好。開關類的按了不關面板，直接看到狀態變化
 $('more').addEventListener('click', (e) => {
@@ -307,7 +321,7 @@ $('more').addEventListener('click', (e) => {
 });
 
 // 版本和字型狀態：各台裝置版面對不起來時，先確認是不是都更新到同一版
-const APP_VERSION = 'v28';
+const APP_VERSION = 'v29';
 function versionLine() {
   const font = !document.fonts || !document.fonts.check ? '' : document.fonts.check('16px "Noto Sans TC"', '筆記')
     ? '筆記字型已載入' : '筆記字型還沒載入（正在用系統字型，換行可能和其他裝置不同）';
@@ -1788,6 +1802,18 @@ function hideToast() {
 }
 
 // ---------- 鍵盤快速鍵 ----------
+// 在工具列、側邊欄上 Ctrl＋滾輪：不要放大整個瀏覽器畫面（頁面上的 Ctrl＋滾輪由編輯器自己處理）
+window.addEventListener('wheel', (e) => { if (e.ctrlKey && !editorEl.contains(e.target)) e.preventDefault(); }, { passive: false });
+
+// Ctrl／⌘ 加 ＋ － 0：只縮放筆記頁面，不要放大整個瀏覽器畫面（工具列也會跟著變大）
+window.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || !editor.page || dlg.open) return;
+  const k = e.key;
+  if (k === '=' || k === '+') { e.preventDefault(); editor.zoomBy(1.25); }
+  else if (k === '-' || k === '_') { e.preventDefault(); editor.zoomBy(0.8); }
+  else if (k === '0') { e.preventDefault(); editor.resetZoom(); }
+});
+
 window.addEventListener('keydown', (e) => {
   if (dlg.open || !menu.hidden || !panel.hidden) return;
   if (e.key === 'Escape' && !editor.isTyping()) { editor.clearSelection(); return; }

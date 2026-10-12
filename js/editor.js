@@ -1248,7 +1248,9 @@ export function createEditor(viewport, hooks = {}) {
     e.preventDefault();
     stopInertia();
     if (e.ctrlKey || e.metaKey) {
-      zoomAt(e.clientX, e.clientY, view.z * Math.exp(-e.deltaY * 0.01));
+      // 滑鼠滾輪一格的數值很大（約 100），觸控板捏合很小（個位數）：限制每次的量，滾輪一格大約放大 20%
+      const d = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      zoomAt(e.clientX, e.clientY, view.z * Math.exp(-Math.max(-60, Math.min(60, d)) * 0.003));
     } else {
       const k = e.deltaMode === 1 ? 16 : 1;
       view.x -= (e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX) * k;
@@ -1691,9 +1693,30 @@ export function createEditor(viewport, hooks = {}) {
   }
 
   function resetZoom() {
-    const r = viewport.getBoundingClientRect();
-    zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1);
+    setZoom(1);
   }
+  // 指定比例（以畫面中間為中心）
+  function setZoom(z) {
+    const r = viewport.getBoundingClientRect();
+    zoomAt(r.left + r.width / 2, r.top + r.height / 2, z);
+  }
+  // 符合頁面寬度：讓標題和所有內容剛好塞滿畫面寬度，捲到最上面
+  function zoomToFit() {
+    if (!page) return;
+    let minX = 64;
+    let maxX = 64 + Math.min(headW, 640);
+    for (const it of items) {
+      const b = itemBounds(it);
+      minX = Math.min(minX, b.x);
+      maxX = Math.max(maxX, b.x + b.w);
+    }
+    const r = vpRect();
+    view.z = Math.min(MAX_Z, Math.max(MIN_Z, (r.width - 48) / (maxX - minX + 48)));
+    view.x = 24 - (minX - 24) * view.z;
+    view.y = 24;
+    applyView();
+  }
+  const getZoom = () => view.z;
 
   function focusTitle() {
     titleInput.focus();
@@ -1703,7 +1726,7 @@ export function createEditor(viewport, hooks = {}) {
   viewport.classList.add('mode-draw');
 
   return {
-    load, setTool, setPrefs, setBackground, undo, redo, zoomBy, resetZoom, focusTitle,
+    load, setTool, setPrefs, setBackground, undo, redo, zoomBy, resetZoom, setZoom, zoomToFit, getZoom, focusTitle,
     deleteSelection, duplicateSelection, isTyping, setReadOnly, isReadOnly: () => readOnly,
     get tool() { return tool; },
     get prefs() { return prefs; },
